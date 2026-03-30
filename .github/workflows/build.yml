@@ -1,0 +1,55 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v2
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install
+      - run: pnpm tauri build
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: src-tauri/target/release/bundle/**/*
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v2
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install
+      - run: pnpm tauri build
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: src-tauri/target/release/bundle/**/*
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v2
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install
+      - run: pnpm tauri build
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: src-tauri/target/release/bundle/**/*
