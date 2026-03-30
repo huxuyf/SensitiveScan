@@ -102,7 +102,11 @@ SensitiveScan/
 │   ├── Cargo.toml                # Rust 依赖配置
 │   └── tauri.conf.json           # Tauri 应用配置
 ├── package.json                  # Node.js 依赖配置
+├── pnpm-lock.yaml                # pnpm 锁文件
 ├── vite.config.js                # Vite 构建配置
+├── .github/workflows/            # GitHub Actions 工作流
+│   └── build.yml                 # 构建配置
+├── .gitignore                    # Git 忽略文件
 └── README.md                     # 本文件
 ```
 
