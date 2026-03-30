@@ -159,7 +159,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useScanStore } from './scanStore'
+import { useScanStore } from '../stores/scanStore'
 import { ElMessage } from 'element-plus'
 
 const scanStore = useScanStore()
