@@ -157,12 +157,14 @@ impl Database {
     }
     
     /// Delete scan results
+    #[allow(dead_code)]
     pub fn delete_scan_results(&self) -> SqlResult<()> {
         self.conn.execute("DELETE FROM scan_results", [])?;
         Ok(())
     }
-    
+
     /// Insert scan history
+    #[allow(dead_code)]
     pub fn insert_scan_history(&self, history: &crate::models::ScanHistory) -> SqlResult<()> {
         let config_json = serde_json::to_string(&history.config)
             .unwrap_or_default();
@@ -298,6 +300,7 @@ impl Database {
     }
     
     /// Clear old data
+    #[allow(dead_code)]
     pub fn cleanup_old_data(&self, days: i64) -> SqlResult<()> {
         let cutoff_date = Utc::now() - chrono::Duration::days(days);
         self.conn.execute(

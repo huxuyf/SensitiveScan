@@ -2,8 +2,6 @@ use regex::Regex;
 use lazy_static::lazy_static;
 use crate::models::SensitiveType;
 
-#[allow(dead_code)]
-
 lazy_static! {
     // Phone number pattern: 1[3-9]\d{9}
     static ref PHONE_PATTERN: Regex = Regex::new(r"^1[3-9]\d{9}$").unwrap();
@@ -21,12 +19,15 @@ lazy_static! {
 }
 
 /// Test phone numbers to exclude (test numbers)
+#[allow(dead_code)]
 const TEST_PHONE_NUMBERS: &[&str] = &["13800138000", "13800138001"];
 
 /// Common non-name words to exclude
+#[allow(dead_code)]
 const EXCLUDE_NAMES: &[&str] = &["测试", "示例", "样本", "数据", "用户", "客户", "商户"];
 
 /// Preprocess text: remove spaces, dashes, and non-visible characters
+#[allow(dead_code)]
 pub fn preprocess_text(text: &str) -> String {
     text.chars()
         .filter(|c| !c.is_whitespace() && *c != '-' && *c != '—' && *c != '_')
@@ -36,6 +37,7 @@ pub fn preprocess_text(text: &str) -> String {
 }
 
 /// Mask sensitive content for display
+#[allow(dead_code)]
 pub fn mask_content(content: &str, sensitive_type: SensitiveType) -> String {
     match sensitive_type {
         SensitiveType::PhoneNumber => {
@@ -70,6 +72,7 @@ pub fn mask_content(content: &str, sensitive_type: SensitiveType) -> String {
 }
 
 /// Detect phone numbers
+#[allow(dead_code)]
 pub fn detect_phone_number(text: &str) -> Option<String> {
     let processed = preprocess_text(text);
     
@@ -92,6 +95,7 @@ pub fn detect_phone_number(text: &str) -> Option<String> {
 }
 
 /// Validate ID card checksum (GB 11643-1999)
+#[allow(dead_code)]
 fn validate_id_card_checksum(id: &str) -> bool {
     if id.len() != 18 {
         return false;
@@ -121,6 +125,7 @@ fn validate_id_card_checksum(id: &str) -> bool {
 }
 
 /// Detect ID card numbers
+#[allow(dead_code)]
 pub fn detect_id_card(text: &str) -> Option<String> {
     let processed = preprocess_text(text).to_uppercase();
     
@@ -140,6 +145,7 @@ pub fn detect_id_card(text: &str) -> Option<String> {
 }
 
 /// Detect names
+#[allow(dead_code)]
 pub fn detect_name(text: &str) -> Option<String> {
     let processed = preprocess_text(text);
     
@@ -157,6 +163,7 @@ pub fn detect_name(text: &str) -> Option<String> {
 }
 
 /// Detect addresses
+#[allow(dead_code)]
 pub fn detect_address(text: &str) -> Option<String> {
     let processed = preprocess_text(text);
     
