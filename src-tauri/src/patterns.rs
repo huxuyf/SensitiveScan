@@ -2,6 +2,8 @@ use regex::Regex;
 use lazy_static::lazy_static;
 use crate::models::SensitiveType;
 
+#[allow(dead_code)]
+
 lazy_static! {
     // Phone number pattern: 1[3-9]\d{9}
     static ref PHONE_PATTERN: Regex = Regex::new(r"^1[3-9]\d{9}$").unwrap();
