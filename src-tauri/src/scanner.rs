@@ -10,6 +10,7 @@ use crate::db::Database;
 use uuid::Uuid;
 use chrono::Utc;
 
+#[allow(dead_code)]
 pub struct Scanner {
     config: ScanConfig,
     db: Arc<Database>,
@@ -19,6 +20,7 @@ pub struct Scanner {
     results_found: Arc<AtomicU64>,
 }
 
+#[allow(dead_code)]
 impl Scanner {
     pub fn new(config: ScanConfig, db: Arc<Database>) -> Self {
         Scanner {

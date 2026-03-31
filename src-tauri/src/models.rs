@@ -75,6 +75,7 @@ impl Default for ScanConfig {
 /// Scan task state
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
 pub enum ScanState {
     Idle,
     Running,
@@ -117,6 +118,7 @@ pub struct WhitelistEntry {
 /// Export format options
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
 pub enum ExportFormat {
     Excel,
     Pdf,
@@ -125,6 +127,7 @@ pub enum ExportFormat {
 
 /// Scan progress event
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ScanProgress {
     pub current_file: String,
     pub files_scanned: u64,

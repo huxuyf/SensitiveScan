@@ -12,7 +12,7 @@ pub async fn start_scan(
     max_file_size: u64,
     sensitive_types: Vec<String>,
 ) -> Result<String, String> {
-    let config = ScanConfig {
+    let _config = ScanConfig {
         scan_paths,
         exclude_paths,
         max_file_size,
@@ -90,7 +90,7 @@ pub async fn get_scan_results(
 /// Export scan results
 #[tauri::command]
 pub async fn export_results(
-    format: String,
+    _format: String,
     file_path: String,
 ) -> Result<String, String> {
     // TODO: Implement export logic

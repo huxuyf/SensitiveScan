@@ -1,7 +1,7 @@
 use rusqlite::{Connection, Result as SqlResult, params};
 use chrono::Utc;
 use std::path::PathBuf;
-use crate::models::{ScanResult, SensitiveType, ScanHistory, WhitelistEntry, ScanStats};
+use crate::models::{ScanResult, SensitiveType, WhitelistEntry, ScanStats};
 
 pub struct Database {
     conn: Connection,
