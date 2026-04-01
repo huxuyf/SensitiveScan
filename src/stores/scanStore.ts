@@ -20,6 +20,13 @@ interface ScanConfig {
   sensitive_types: string[]
 }
 
+interface Settings {
+  max_file_size: number
+  auto_mask_results: boolean
+  export_format: string
+  language: string
+}
+
 export const useScanStore = defineStore('scan', () => {
   // State
   const isScanning = ref(false)
@@ -37,6 +44,12 @@ export const useScanStore = defineStore('scan', () => {
     exclude_paths: [],
     max_file_size: 100 * 1024 * 1024,
     sensitive_types: ['phonenumber', 'idcard', 'name', 'address']
+  })
+  const settings = ref<Settings>({
+    max_file_size: 100 * 1024 * 1024, // 100MB default
+    auto_mask_results: true,
+    export_format: 'xlsx',
+    language: 'zh-CN'
   })
 
   // Computed
@@ -99,6 +112,30 @@ export const useScanStore = defineStore('scan', () => {
     results.value = []
   }
 
+  const updateSettings = (newSettings: Partial<Settings>) => {
+    settings.value = {
+      ...settings.value,
+      ...newSettings
+    }
+    // Persist to localStorage
+    localStorage.setItem('scan-settings', JSON.stringify(settings.value))
+  }
+
+  // Load settings from localStorage on init
+  const loadSettings = () => {
+    const saved = localStorage.getItem('scan-settings')
+    if (saved) {
+      try {
+        settings.value = { ...settings.value, ...JSON.parse(saved) }
+      } catch (e) {
+        console.error('Failed to load settings:', e)
+      }
+    }
+  }
+
+  // Initialize
+  loadSettings()
+
   return {
     // State
     isScanning,
@@ -112,6 +149,7 @@ export const useScanStore = defineStore('scan', () => {
     scanSpeed,
     results,
     scanConfig,
+    settings,
     // Computed
     scanStats,
     // Actions
@@ -121,6 +159,8 @@ export const useScanStore = defineStore('scan', () => {
     stopScan,
     updateProgress,
     addResult,
-    clearResults
+    clearResults,
+    updateSettings,
+    loadSettings
   }
 })

@@ -148,10 +148,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useScanStore } from '../stores/scanStore'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/tauri'
+import { open } from '@tauri-apps/plugin-dialog'
+import { listen } from '@tauri-apps/api/event'
 
 const scanStore = useScanStore()
 
@@ -191,27 +193,43 @@ const removeExcludePath = (index: number) => {
 
 const selectFolder = async () => {
   try {
-    const selected = await invoke<string>('select_folder')
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: '选择扫描文件夹'
+    })
     if (selected) {
-      scanForm.value.scan_paths.push(selected)
-      ElMessage.success(`已添加路径: ${selected}`)
+      if (Array.isArray(selected)) {
+        scanForm.value.scan_paths.push(selected[0])
+      } else {
+        scanForm.value.scan_paths.push(selected)
+      }
+      ElMessage.success('已添加扫描路径')
     }
   } catch (error) {
+    console.error('Failed to select folder:', error)
     ElMessage.error('选择文件夹失败')
-    console.error(error)
   }
 }
 
 const selectExcludeFolder = async () => {
   try {
-    const selected = await invoke<string>('select_folder')
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: '选择要排除的文件夹'
+    })
     if (selected) {
-      scanForm.value.exclude_paths.push(selected)
-      ElMessage.success(`已添加排除路径: ${selected}`)
+      if (Array.isArray(selected)) {
+        scanForm.value.exclude_paths.push(selected[0])
+      } else {
+        scanForm.value.exclude_paths.push(selected)
+      }
+      ElMessage.success('已添加排除路径')
     }
   } catch (error) {
-    ElMessage.error('选择文件夹失败')
-    console.error(error)
+    console.error('Failed to select exclude folder:', error)
+    ElMessage.error('选择排除文件夹失败')
   }
 }
 
@@ -222,6 +240,9 @@ const startScan = async () => {
   }
 
   try {
+    // Load max_file_size from settings (default 100MB)
+    scanForm.value.max_file_size = scanStore.settings.max_file_size || (100 * 1024 * 1024)
+
     scanStore.startScan(scanForm.value)
     const result = await invoke<string>('start_scan', {
       scanPaths: scanForm.value.scan_paths,
@@ -284,6 +305,40 @@ const formatTime = (seconds: number) => {
   const secs = seconds % 60
   return `${hours}h ${minutes}m ${secs}s`
 }
+
+// Event listeners
+let unlistenProgress: (() => void) | null = null
+let unlistenResult: (() => void) | null = null
+let unlistenComplete: (() => void) | null = null
+
+onMounted(async () => {
+  try {
+    // Listen for scan progress updates
+    unlistenProgress = await listen<any>('scan-progress', (event) => {
+      scanStore.updateProgress(event.payload)
+    })
+
+    // Listen for scan results
+    unlistenResult = await listen<any>('scan-result', (event) => {
+      scanStore.addResult(event.payload)
+    })
+
+    // Listen for scan completion
+    unlistenComplete = await listen<any>('scan-complete', (event) => {
+      scanStore.stopScan()
+      ElMessage.success('扫描已完成')
+    })
+  } catch (error) {
+    console.error('Failed to setup event listeners:', error)
+  }
+})
+
+onUnmounted(() => {
+  // Cleanup event listeners
+  unlistenProgress?.()
+  unlistenResult?.()
+  unlistenComplete?.()
+})
 </script>
 
 <style scoped lang="css">
