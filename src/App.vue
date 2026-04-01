@@ -11,7 +11,7 @@
           <div class="header-actions">
             <el-dropdown trigger="click" @command="handleLanguageChange">
               <el-button class="header-btn">
-                <el-icon><Globe /></el-icon>
+                <el-icon><Lock /></el-icon>
                 <span>{{ currentLanguage }}</span>
                 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
@@ -136,7 +136,7 @@
     <el-dialog v-model="showAboutDialog" title="关于" width="500px">
       <div class="about-content">
         <div class="about-header">
-          <el-icon class="about-icon"><Shield /></el-icon>
+          <el-icon class="about-icon"><InfoFilled /></el-icon>
           <h2>敏感信息全盘扫描工具</h2>
         </div>
         <div class="about-info">
@@ -172,10 +172,10 @@ import {
   Download,
   Tools,
   Operation,
-  Globe,
   ArrowDown,
   RefreshRight,
-  Shield
+  Lock,
+  InfoFilled
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
