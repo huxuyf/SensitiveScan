@@ -41,6 +41,7 @@
               @keyup.enter="addExcludePath"
             />
             <el-button @click="addExcludePath">添加</el-button>
+            <el-button @click="selectExcludeFolder">选择文件夹</el-button>
           </div>
           <div class="path-list" v-if="scanForm.exclude_paths.length > 0">
             <el-tag
@@ -53,17 +54,6 @@
               {{ path }}
             </el-tag>
           </div>
-        </el-form-item>
-
-        <!-- Max File Size -->
-        <el-form-item label="最大文件大小">
-          <el-input-number
-            v-model="scanForm.max_file_size"
-            :min="10485760"
-            :max="1073741824"
-            step="10485760"
-          />
-          <span class="size-hint">（字节，默认 100MB）</span>
         </el-form-item>
 
         <!-- Sensitive Types -->
@@ -161,6 +151,7 @@
 import { ref, computed } from 'vue'
 import { useScanStore } from '../stores/scanStore'
 import { ElMessage } from 'element-plus'
+import { invoke } from '@tauri-apps/api/tauri'
 
 const scanStore = useScanStore()
 
@@ -198,8 +189,30 @@ const removeExcludePath = (index: number) => {
   scanForm.value.exclude_paths.splice(index, 1)
 }
 
-const selectFolder = () => {
-  ElMessage.info('文件夹选择功能需要集成 Tauri 文件对话框')
+const selectFolder = async () => {
+  try {
+    const selected = await invoke<string>('select_folder')
+    if (selected) {
+      scanForm.value.scan_paths.push(selected)
+      ElMessage.success(`已添加路径: ${selected}`)
+    }
+  } catch (error) {
+    ElMessage.error('选择文件夹失败')
+    console.error(error)
+  }
+}
+
+const selectExcludeFolder = async () => {
+  try {
+    const selected = await invoke<string>('select_folder')
+    if (selected) {
+      scanForm.value.exclude_paths.push(selected)
+      ElMessage.success(`已添加排除路径: ${selected}`)
+    }
+  } catch (error) {
+    ElMessage.error('选择文件夹失败')
+    console.error(error)
+  }
 }
 
 const startScan = async () => {
@@ -210,29 +223,59 @@ const startScan = async () => {
 
   try {
     scanStore.startScan(scanForm.value)
-    ElMessage.success('扫描已启动')
-    // TODO: Call Tauri command to start scan
+    const result = await invoke<string>('start_scan', {
+      scanPaths: scanForm.value.scan_paths,
+      excludePaths: scanForm.value.exclude_paths,
+      maxFileSize: scanForm.value.max_file_size,
+      sensitiveTypes: scanForm.value.sensitive_types
+    })
+
+    // Parse the result to get task ID
+    const data = JSON.parse(result)
+    if (data.status === 'started') {
+      ElMessage.success('扫描已启动')
+    } else {
+      ElMessage.error('启动扫描失败')
+      scanStore.stopScan()
+    }
   } catch (error) {
-    ElMessage.error('启动扫描失败')
+    console.error('Start scan error:', error)
+    ElMessage.error('启动扫描失败: ' + (error as Error).message)
+    scanStore.stopScan()
   }
 }
 
-const pauseScan = () => {
-  scanStore.pauseScan()
-  ElMessage.info('扫描已暂停')
-  // TODO: Call Tauri command to pause scan
+const pauseScan = async () => {
+  try {
+    await invoke<string>('pause_scan')
+    scanStore.pauseScan()
+    ElMessage.info('扫描已暂停')
+  } catch (error) {
+    ElMessage.error('暂停扫描失败')
+    console.error(error)
+  }
 }
 
-const resumeScan = () => {
-  scanStore.resumeScan()
-  ElMessage.info('扫描已继续')
-  // TODO: Call Tauri command to resume scan
+const resumeScan = async () => {
+  try {
+    await invoke<string>('resume_scan')
+    scanStore.resumeScan()
+    ElMessage.info('扫描已继续')
+  } catch (error) {
+    ElMessage.error('继续扫描失败')
+    console.error(error)
+  }
 }
 
-const stopScan = () => {
-  scanStore.stopScan()
-  ElMessage.warning('扫描已停止')
-  // TODO: Call Tauri command to stop scan
+const stopScan = async () => {
+  try {
+    await invoke<string>('stop_scan')
+    scanStore.stopScan()
+    ElMessage.warning('扫描已停止')
+  } catch (error) {
+    ElMessage.error('停止扫描失败')
+    console.error(error)
+  }
 }
 
 const formatTime = (seconds: number) => {

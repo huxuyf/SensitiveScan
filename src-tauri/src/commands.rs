@@ -3,6 +3,23 @@ use crate::models::{ScanConfig, SensitiveType, WhitelistEntry};
 use crate::db::Database;
 use uuid::Uuid;
 use chrono::Utc;
+use tauri_plugin_dialog::DialogExt;
+
+/// Select a folder using system dialog
+#[tauri::command]
+pub async fn select_folder(app: tauri::AppHandle) -> Result<String, String> {
+    let folder_path = app
+        .dialog()
+        .file()
+        .pick_folder()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    match folder_path {
+        Some(path) => Ok(path.to_string_lossy().to_string()),
+        None => Err("No folder selected".to_string()),
+    }
+}
 
 /// Start a new scan task
 #[tauri::command]
