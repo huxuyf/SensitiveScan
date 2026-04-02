@@ -12,8 +12,15 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, 'dist'),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
-      input: path.resolve(__dirname, 'src/index.html')
+      input: path.resolve(__dirname, 'src/index.html'),
+      output: {
+        manualChunks: {
+          'element-plus': ['element-plus'],
+          'vue-vendor': ['vue', 'vue-router', 'pinia'],
+        }
+      }
     }
   },
 })
