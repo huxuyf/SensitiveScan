@@ -8,8 +8,6 @@ use tauri_plugin_dialog::DialogExt;
 /// Select a folder using system dialog
 #[tauri::command]
 pub async fn select_folder(app: tauri::AppHandle) -> Result<String, String> {
-    use std::sync::mpsc;
-    use std::sync::Arc;
     use tokio::sync::oneshot;
 
     let (tx, rx) = oneshot::channel();
@@ -18,13 +16,12 @@ pub async fn select_folder(app: tauri::AppHandle) -> Result<String, String> {
         .file()
         .pick_folder(move |result| {
             let _ = tx.send(result);
-        })
-        .map_err(|e| e.to_string())?;
+        });
 
     let folder_path = rx.await.map_err(|e| e.to_string())?;
 
     match folder_path {
-        Some(path) => Ok(path.to_string_lossy().to_string()),
+        Some(path) => Ok(path.to_string()),
         None => Err("No folder selected".to_string()),
     }
 }
