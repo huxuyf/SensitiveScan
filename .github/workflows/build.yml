@@ -69,13 +69,25 @@ jobs:
         run: pnpm build
 
       - name: Build Tauri app
-        run: pnpm tauri build --target ${{ matrix.target }} --bundles deb
+        run: pnpm tauri build --target ${{ matrix.target }} --bundles appimage,deb
+
+      - name: List bundle contents
+        run: |
+          echo "=== Bundle directory contents ==="
+          ls -la src-tauri/target/release/bundle/ || echo "Bundle directory not found"
+          echo "=== AppImage directory ==="
+          ls -la src-tauri/target/release/bundle/appimage/ || echo "AppImage directory not found"
+          echo "=== Deb directory ==="
+          ls -la src-tauri/target/release/bundle/deb/ || echo "Deb directory not found"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-artifacts
-          path: src-tauri/target/release/bundle/
+          path: |
+            src-tauri/target/release/bundle/appimage/
+            src-tauri/target/release/bundle/deb/
+          if-no-files-found: warn
           retention-days: 5
 
   build-windows:
@@ -122,11 +134,20 @@ jobs:
       - name: Build Tauri app
         run: pnpm tauri build --bundles nsis
 
+      - name: List bundle contents
+        shell: bash
+        run: |
+          echo "=== Bundle directory contents ==="
+          ls -la src-tauri/target/release/bundle/ || echo "Bundle directory not found"
+          echo "=== Nsis directory ==="
+          ls -la src-tauri/target/release/bundle/nsis/ || echo "Nsis directory not found"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifacts
-          path: src-tauri/target/release/bundle/
+          path: src-tauri/target/release/bundle/nsis/
+          if-no-files-found: warn
           retention-days: 5
 
   create-release:
