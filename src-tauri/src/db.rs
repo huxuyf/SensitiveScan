@@ -1,10 +1,11 @@
 use rusqlite::{Connection, Result as SqlResult, params};
 use chrono::Utc;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use crate::models::{ScanResult, SensitiveType, WhitelistEntry, ScanStats};
 
 pub struct Database {
-    conn: Connection,
+    conn: Mutex<Connection>,
 }
 
 impl Database {
@@ -12,11 +13,11 @@ impl Database {
     pub fn new() -> SqlResult<Self> {
         let db_path = Self::get_db_path();
         std::fs::create_dir_all(db_path.parent().unwrap()).ok();
-        
+
         let conn = Connection::open(&db_path)?;
         conn.execute_batch("PRAGMA journal_mode = WAL;")?;
-        
-        let db = Database { conn };
+
+        let db = Database { conn: Mutex::new(conn) };
         db.init_schema()?;
         Ok(db)
     }
@@ -42,7 +43,7 @@ impl Database {
     
     /// Initialize database schema
     fn init_schema(&self) -> SqlResult<()> {
-        self.conn.execute_batch(
+        self.conn.lock().unwrap().execute_batch(
             "
             CREATE TABLE IF NOT EXISTS scan_results (
                 id TEXT PRIMARY KEY,
@@ -55,7 +56,7 @@ impl Database {
                 masked_content TEXT NOT NULL,
                 found_at DATETIME NOT NULL
             );
-            
+
             CREATE TABLE IF NOT EXISTS scan_history (
                 id TEXT PRIMARY KEY,
                 scan_paths TEXT NOT NULL,
@@ -64,7 +65,7 @@ impl Database {
                 created_at DATETIME NOT NULL,
                 completed_at DATETIME
             );
-            
+
             CREATE TABLE IF NOT EXISTS whitelist (
                 id TEXT PRIMARY KEY,
                 content TEXT NOT NULL,
@@ -72,7 +73,7 @@ impl Database {
                 description TEXT,
                 created_at DATETIME NOT NULL
             );
-            
+
             CREATE INDEX IF NOT EXISTS idx_scan_results_file ON scan_results(file_path);
             CREATE INDEX IF NOT EXISTS idx_scan_results_type ON scan_results(sensitive_type);
             CREATE INDEX IF NOT EXISTS idx_scan_results_found_at ON scan_results(found_at);
@@ -81,11 +82,11 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     /// Insert scan result
     pub fn insert_scan_result(&self, result: &ScanResult) -> SqlResult<()> {
-        self.conn.execute(
-            "INSERT INTO scan_results 
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO scan_results
              (id, file_path, sheet_name, row, column, sensitive_type, content, masked_content, found_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
@@ -113,20 +114,20 @@ impl Database {
     ) -> SqlResult<Vec<ScanResult>> {
         let limit = limit.unwrap_or(1000);
         let offset = offset.unwrap_or(0);
-        
+
         let mut query = "SELECT id, file_path, sheet_name, row, column, sensitive_type, content, masked_content, found_at FROM scan_results WHERE 1=1".to_string();
-        
+
         if let Some(file_path) = file_path_filter {
             query.push_str(&format!(" AND file_path LIKE '%{}%'", file_path.replace("'", "''")));
         }
-        
+
         if let Some(sensitive_type) = sensitive_type_filter {
             query.push_str(&format!(" AND sensitive_type = '{}'", sensitive_type));
         }
-        
+
         query.push_str(&format!(" ORDER BY found_at DESC LIMIT {} OFFSET {}", limit, offset));
-        
-        let mut stmt = self.conn.prepare(&query)?;
+
+        let mut stmt = self.conn.lock().unwrap().prepare(&query)?;
         let results = stmt.query_map([], |row| {
             Ok(ScanResult {
                 id: row.get(0)?,
@@ -142,24 +143,24 @@ impl Database {
                     .unwrap_or_else(|_| Utc::now()),
             })
         })?;
-        
+
         let mut vec = Vec::new();
         for result in results {
             vec.push(result?);
         }
         Ok(vec)
     }
-    
+
     /// Count scan results
     pub fn count_scan_results(&self) -> SqlResult<u64> {
-        let mut stmt = self.conn.prepare("SELECT COUNT(*) FROM scan_results")?;
+        let mut stmt = self.conn.lock().unwrap().prepare("SELECT COUNT(*) FROM scan_results")?;
         stmt.query_row([], |row| row.get(0))
     }
-    
+
     /// Delete scan results
     #[allow(dead_code)]
     pub fn delete_scan_results(&self) -> SqlResult<()> {
-        self.conn.execute("DELETE FROM scan_results", [])?;
+        self.conn.lock().unwrap().execute("DELETE FROM scan_results", [])?;
         Ok(())
     }
 
@@ -172,8 +173,8 @@ impl Database {
             .unwrap_or_default();
         let paths_json = serde_json::to_string(&history.scan_paths)
             .unwrap_or_default();
-        
-        self.conn.execute(
+
+        self.conn.lock().unwrap().execute(
             "INSERT INTO scan_history (id, scan_paths, config, stats, created_at, completed_at)
              VALUES (?, ?, ?, ?, ?, ?)",
             params![
@@ -187,15 +188,15 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     /// Get scan history
     pub fn get_scan_history(&self, limit: Option<i64>) -> SqlResult<Vec<crate::models::ScanHistory>> {
         let limit = limit.unwrap_or(100);
-        let mut stmt = self.conn.prepare(
-            "SELECT id, scan_paths, config, stats, created_at, completed_at FROM scan_history 
+        let mut stmt = self.conn.lock().unwrap().prepare(
+            "SELECT id, scan_paths, config, stats, created_at, completed_at FROM scan_history
              ORDER BY created_at DESC LIMIT ?"
         )?;
-        
+
         let results = stmt.query_map(params![limit], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -206,7 +207,7 @@ impl Database {
                 row.get::<_, Option<String>>(5)?,
             ))
         })?;
-        
+
         let mut vec = Vec::new();
         for result in results {
             if let Ok((id, paths_json, config_json, stats_json, created_at, completed_at)) = result {
@@ -229,19 +230,19 @@ impl Database {
         }
         Ok(vec)
     }
-    
+
     /// Delete scan history
     pub fn delete_scan_history(&self, history_id: &str) -> SqlResult<()> {
-        self.conn.execute(
+        self.conn.lock().unwrap().execute(
             "DELETE FROM scan_history WHERE id = ?",
             params![history_id],
         )?;
         Ok(())
     }
-    
+
     /// Add whitelist entry
     pub fn add_whitelist(&self, entry: &WhitelistEntry) -> SqlResult<()> {
-        self.conn.execute(
+        self.conn.lock().unwrap().execute(
             "INSERT INTO whitelist (id, content, sensitive_type, description, created_at)
              VALUES (?, ?, ?, ?, ?)",
             params![
@@ -254,14 +255,14 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     /// Get whitelist
     pub fn get_whitelist(&self) -> SqlResult<Vec<WhitelistEntry>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, content, sensitive_type, description, created_at FROM whitelist 
+        let mut stmt = self.conn.lock().unwrap().prepare(
+            "SELECT id, content, sensitive_type, description, created_at FROM whitelist
              ORDER BY created_at DESC"
         )?;
-        
+
         let results = stmt.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -271,7 +272,7 @@ impl Database {
                 row.get::<_, String>(4)?,
             ))
         })?;
-        
+
         let mut vec = Vec::new();
         for result in results {
             if let Ok((id, content, sensitive_type, description, created_at)) = result {
@@ -289,21 +290,21 @@ impl Database {
         }
         Ok(vec)
     }
-    
+
     /// Delete whitelist entry
     pub fn delete_whitelist(&self, entry_id: &str) -> SqlResult<()> {
-        self.conn.execute(
+        self.conn.lock().unwrap().execute(
             "DELETE FROM whitelist WHERE id = ?",
             params![entry_id],
         )?;
         Ok(())
     }
-    
+
     /// Clear old data
     #[allow(dead_code)]
     pub fn cleanup_old_data(&self, days: i64) -> SqlResult<()> {
         let cutoff_date = Utc::now() - chrono::Duration::days(days);
-        self.conn.execute(
+        self.conn.lock().unwrap().execute(
             "DELETE FROM scan_results WHERE found_at < ?",
             params![cutoff_date.to_rfc3339()],
         )?;

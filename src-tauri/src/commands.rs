@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use chrono::Utc;
 use tauri_plugin_dialog::DialogExt;
+use tauri::Emitter;
 
 // Global scanner instance
 static SCANNER: Mutex<Option<Arc<Scanner>>> = Mutex::new(None);

@@ -35,7 +35,7 @@ impl Scanner {
             is_paused: Arc::new(AtomicBool::new(false)),
             files_scanned: Arc::new(AtomicU64::new(0)),
             results_found: Arc::new(AtomicU64::new(0)),
-            start_time: Arc::new(std::time::Instant::now()),
+            start_time: Arc::new(Mutex::new(std::time::Instant::now())),
             total_files: Arc::new(AtomicU64::new(0)),
         }
     }
