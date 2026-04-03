@@ -92,7 +92,7 @@ export const useScanStore = defineStore('scan', () => {
     results_found: number
     progress_percentage: number
     elapsed_seconds: number
-    estimated_remaining_seconds: number
+    estimated_remaining: number
     scan_speed: number
   }) => {
     currentFile.value = data.current_file
@@ -100,7 +100,7 @@ export const useScanStore = defineStore('scan', () => {
     resultsFound.value = data.results_found
     progressPercentage.value = data.progress_percentage
     elapsedSeconds.value = data.elapsed_seconds
-    estimatedRemaining.value = data.estimated_remaining_seconds
+    estimatedRemaining.value = data.estimated_remaining
     scanSpeed.value = data.scan_speed
   }
 

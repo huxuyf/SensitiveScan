@@ -276,7 +276,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useScanStore } from '../stores/scanStore'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/tauri'
-import { open } from '@tauri-apps/plugin-dialog'
 import { listen } from '@tauri-apps/api/event'
 import {
   FolderOpened,
@@ -368,17 +367,9 @@ const removeExcludePath = (index: number) => {
 
 const selectFolder = async () => {
   try {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: '选择扫描文件夹'
-    })
+    const selected = await invoke<string>('select_folder')
     if (selected) {
-      if (Array.isArray(selected)) {
-        scanForm.value.scan_paths.push(selected[0])
-      } else {
-        scanForm.value.scan_paths.push(selected)
-      }
+      scanForm.value.scan_paths.push(selected)
       ElMessage.success('已添加扫描路径')
     }
   } catch (error) {
@@ -389,17 +380,9 @@ const selectFolder = async () => {
 
 const selectExcludeFolder = async () => {
   try {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: '选择要排除的文件夹'
-    })
+    const selected = await invoke<string>('select_folder')
     if (selected) {
-      if (Array.isArray(selected)) {
-        scanForm.value.exclude_paths.push(selected[0])
-      } else {
-        scanForm.value.exclude_paths.push(selected)
-      }
+      scanForm.value.exclude_paths.push(selected)
       ElMessage.success('已添加排除路径')
     }
   } catch (error) {

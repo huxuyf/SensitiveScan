@@ -1,9 +1,14 @@
 use serde_json::json;
 use crate::models::{ScanConfig, SensitiveType, WhitelistEntry};
 use crate::db::Database;
+use crate::scanner::Scanner;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use chrono::Utc;
 use tauri_plugin_dialog::DialogExt;
+
+// Global scanner instance
+static SCANNER: Mutex<Option<Arc<Scanner>>> = Mutex::new(None);
 
 /// Select a folder using system dialog
 #[tauri::command]
@@ -29,12 +34,13 @@ pub async fn select_folder(app: tauri::AppHandle) -> Result<String, String> {
 /// Start a new scan task
 #[tauri::command]
 pub async fn start_scan(
+    app: tauri::AppHandle,
     scan_paths: Vec<String>,
     exclude_paths: Vec<String>,
     max_file_size: u64,
     sensitive_types: Vec<String>,
 ) -> Result<String, String> {
-    let _config = ScanConfig {
+    let config = ScanConfig {
         scan_paths,
         exclude_paths,
         max_file_size,
@@ -57,8 +63,33 @@ pub async fn start_scan(
         min_records_threshold: 50,
         thread_count: num_cpus::get().saturating_sub(1).max(1),
     };
-    
-    // TODO: Implement actual scanning logic
+
+    let db = Database::new().map_err(|e| e.to_string())?;
+    let mut scanner = Scanner::new(config, Arc::new(db));
+
+    // Set app handle for event emission
+    scanner.set_app_handle(app.clone());
+
+    // Store scanner instance globally
+    let scanner_arc = Arc::new(scanner);
+    {
+        let mut guard = SCANNER.lock().unwrap();
+        *guard = Some(scanner_arc.clone());
+    }
+
+    // Start scanning in background
+    let scanner_clone = scanner_arc.clone();
+    tokio::spawn(async move {
+        if let Err(e) = scanner_clone.start_scan().await {
+            eprintln!("Scan error: {}", e);
+        }
+
+        // Emit completion event
+        if let Err(e) = app.emit("scan-complete", json!({"status": "completed"})) {
+            eprintln!("Failed to emit scan-complete event: {}", e);
+        }
+    });
+
     Ok(json!({
         "task_id": Uuid::new_v4().to_string(),
         "status": "started"
@@ -68,25 +99,43 @@ pub async fn start_scan(
 /// Pause current scan
 #[tauri::command]
 pub async fn pause_scan() -> Result<String, String> {
-    Ok(json!({
-        "status": "paused"
-    }).to_string())
+    let guard = SCANNER.lock().unwrap();
+    if let Some(scanner) = guard.as_ref() {
+        scanner.pause_scan();
+        Ok(json!({
+            "status": "paused"
+        }).to_string())
+    } else {
+        Err("No active scan".to_string())
+    }
 }
 
 /// Resume paused scan
 #[tauri::command]
 pub async fn resume_scan() -> Result<String, String> {
-    Ok(json!({
-        "status": "resumed"
-    }).to_string())
+    let guard = SCANNER.lock().unwrap();
+    if let Some(scanner) = guard.as_ref() {
+        scanner.resume_scan();
+        Ok(json!({
+            "status": "resumed"
+        }).to_string())
+    } else {
+        Err("No active scan".to_string())
+    }
 }
 
 /// Stop current scan
 #[tauri::command]
 pub async fn stop_scan() -> Result<String, String> {
-    Ok(json!({
-        "status": "stopped"
-    }).to_string())
+    let guard = SCANNER.lock().unwrap();
+    if let Some(scanner) = guard.as_ref() {
+        scanner.stop_scan();
+        Ok(json!({
+            "status": "stopped"
+        }).to_string())
+    } else {
+        Err("No active scan".to_string())
+    }
 }
 
 /// Get scan results

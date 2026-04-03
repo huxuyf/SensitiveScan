@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::fs;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use walkdir::WalkDir;
 use calamine::{Reader, open_workbook, Xlsx, Xls};
@@ -9,15 +9,19 @@ use crate::patterns::{detect_phone_number, detect_id_card, detect_name, detect_a
 use crate::db::Database;
 use uuid::Uuid;
 use chrono::Utc;
+use tauri::{AppHandle, Emitter};
 
 #[allow(dead_code)]
 pub struct Scanner {
     config: ScanConfig,
     db: Arc<Database>,
+    app_handle: Option<AppHandle>,
     is_running: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
     files_scanned: Arc<AtomicU64>,
     results_found: Arc<AtomicU64>,
+    start_time: Arc<Mutex<std::time::Instant>>,
+    total_files: Arc<AtomicU64>,
 }
 
 #[allow(dead_code)]
@@ -26,48 +30,147 @@ impl Scanner {
         Scanner {
             config,
             db,
+            app_handle: None,
             is_running: Arc::new(AtomicBool::new(false)),
             is_paused: Arc::new(AtomicBool::new(false)),
             files_scanned: Arc::new(AtomicU64::new(0)),
             results_found: Arc::new(AtomicU64::new(0)),
+            start_time: Arc::new(std::time::Instant::now()),
+            total_files: Arc::new(AtomicU64::new(0)),
         }
     }
-    
+
+    pub fn set_app_handle(&mut self, app_handle: AppHandle) {
+        self.app_handle = Some(app_handle);
+    }
+
     /// Start scanning
     pub async fn start_scan(&self) -> Result<(), String> {
         self.is_running.store(true, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
-        
+        *self.start_time.lock().unwrap() = std::time::Instant::now();
+
+        // Count total files first
+        for scan_path in &self.config.scan_paths {
+            self.count_files(scan_path).await?;
+        }
+
         for scan_path in &self.config.scan_paths {
             self.scan_directory(scan_path).await?;
         }
-        
+
         self.is_running.store(false, Ordering::SeqCst);
         Ok(())
     }
-    
+
+    /// Count total files to scan
+    async fn count_files(&self, dir_path: &str) -> Result<(), String> {
+        let path = Path::new(dir_path);
+        if !path.exists() {
+            return Err(format!("Path does not exist: {}", dir_path));
+        }
+
+        let mut count = 0u64;
+        for entry in WalkDir::new(path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let file_path = entry.path();
+
+            if file_path.is_dir() {
+                continue;
+            }
+
+            if self.should_exclude_path(file_path) {
+                continue;
+            }
+
+            if let Ok(metadata) = fs::metadata(file_path) {
+                if metadata.len() > self.config.max_file_size {
+                    continue;
+                }
+            }
+
+            let extension = file_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| format!(".{}", s.to_lowercase()))
+                .unwrap_or_default();
+
+            if self.config.file_types.contains(&extension) {
+                count += 1;
+            }
+        }
+
+        self.total_files.store(count, Ordering::SeqCst);
+        Ok(())
+    }
+
     /// Pause scanning
     pub fn pause_scan(&self) {
         self.is_paused.store(true, Ordering::SeqCst);
     }
-    
+
     /// Resume scanning
     pub fn resume_scan(&self) {
         self.is_paused.store(false, Ordering::SeqCst);
     }
-    
+
     /// Stop scanning
     pub fn stop_scan(&self) {
         self.is_running.store(false, Ordering::SeqCst);
     }
-    
+
+    /// Emit progress event
+    fn emit_progress(&self, current_file: &str) {
+        if let Some(app) = &self.app_handle {
+            let files_scanned = self.files_scanned.load(Ordering::SeqCst);
+            let results_found = self.results_found.load(Ordering::SeqCst);
+            let total_files = self.total_files.load(Ordering::SeqCst);
+            let elapsed = self.start_time.lock().unwrap().elapsed().as_secs();
+
+            let progress_percentage = if total_files > 0 {
+                (files_scanned as f64 / total_files as f64 * 100.0) as u32
+            } else {
+                0
+            };
+
+            let scan_speed = if elapsed > 0 {
+                files_scanned / elapsed
+            } else {
+                0
+            };
+
+            let estimated_remaining = if scan_speed > 0 && total_files > files_scanned {
+                (total_files - files_scanned) / scan_speed
+            } else {
+                0
+            };
+
+            let progress_data = serde_json::json!({
+                "current_file": current_file,
+                "files_scanned": files_scanned,
+                "results_found": results_found,
+                "total_files": total_files,
+                "progress_percentage": progress_percentage,
+                "scan_speed": scan_speed,
+                "elapsed_seconds": elapsed,
+                "estimated_remaining": estimated_remaining,
+            });
+
+            if let Err(e) = app.emit("scan-progress", progress_data) {
+                eprintln!("Failed to emit progress event: {}", e);
+            }
+        }
+    }
+
     /// Scan a directory recursively
     async fn scan_directory(&self, dir_path: &str) -> Result<(), String> {
         let path = Path::new(dir_path);
         if !path.exists() {
             return Err(format!("Path does not exist: {}", dir_path));
         }
-        
+
         for entry in WalkDir::new(path)
             .into_iter()
             .filter_map(|e| e.ok())
@@ -76,54 +179,59 @@ impl Scanner {
             if !self.is_running.load(Ordering::SeqCst) {
                 break;
             }
-            
+
             while self.is_paused.load(Ordering::SeqCst) {
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
-            
+
             let file_path = entry.path();
-            
+
             // Skip if it's a directory
             if file_path.is_dir() {
                 continue;
             }
-            
+
             // Check if path should be excluded
             if self.should_exclude_path(file_path) {
                 continue;
             }
-            
+
             // Check file size
             if let Ok(metadata) = fs::metadata(file_path) {
                 if metadata.len() > self.config.max_file_size {
                     continue;
                 }
             }
-            
+
             // Check file extension
             let extension = file_path
                 .extension()
                 .and_then(|s| s.to_str())
                 .map(|s| format!(".{}", s.to_lowercase()))
                 .unwrap_or_default();
-            
+
             if !self.config.file_types.contains(&extension) {
                 continue;
             }
-            
+
+            let file_path_str = file_path.to_string_lossy().to_string();
+
+            // Emit progress before scanning
+            self.emit_progress(&file_path_str);
+
             // Scan the file
             let _ = self.scan_file(file_path).await;
-            
+
             self.files_scanned.fetch_add(1, Ordering::SeqCst);
         }
-        
+
         Ok(())
     }
-    
+
     /// Check if a path should be excluded
     fn should_exclude_path(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy().to_lowercase();
-        
+
         // System paths to exclude
         let system_excludes = if cfg!(target_os = "windows") {
             vec![
@@ -145,23 +253,23 @@ impl Scanner {
                 "/var/cache/",
             ]
         };
-        
+
         for exclude in system_excludes {
             if path_str.contains(exclude) {
                 return true;
             }
         }
-        
+
         // User-defined excludes
         for exclude_path in &self.config.exclude_paths {
             if path_str.contains(&exclude_path.to_lowercase()) {
                 return true;
             }
         }
-        
+
         false
     }
-    
+
     /// Scan a single file
     async fn scan_file(&self, file_path: &Path) -> Result<(), String> {
         let extension = file_path
@@ -169,30 +277,30 @@ impl Scanner {
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_lowercase();
-        
+
         match extension.as_str() {
             "xlsx" | "xls" => self.scan_excel_file(file_path).await,
             "csv" | "txt" => self.scan_text_file(file_path).await,
             _ => Ok(()),
         }
     }
-    
+
     /// Scan Excel file
     async fn scan_excel_file(&self, file_path: &Path) -> Result<(), String> {
         let file_path_str = file_path.to_string_lossy().to_string();
-        
+
         match open_workbook::<Xlsx<_>, _>(file_path) {
             Ok(mut workbook) => {
                 for sheet_name in workbook.sheet_names() {
                     if !self.is_running.load(Ordering::SeqCst) {
                         break;
                     }
-                    
+
                     if let Ok(range) = workbook.worksheet_range(&sheet_name) {
                         for (row_idx, row) in range.rows().enumerate() {
                             for (col_idx, cell) in row.iter().enumerate() {
                                 let cell_value = cell.to_string();
-                                
+
                                 if !cell_value.is_empty() {
                                     self.check_and_store_result(
                                         &file_path_str,
@@ -216,12 +324,12 @@ impl Scanner {
                             if !self.is_running.load(Ordering::SeqCst) {
                                 break;
                             }
-                            
+
                             if let Ok(range) = workbook.worksheet_range(&sheet_name) {
                                 for (row_idx, row) in range.rows().enumerate() {
                                     for (col_idx, cell) in row.iter().enumerate() {
                                         let cell_value = cell.to_string();
-                                        
+
                                         if !cell_value.is_empty() {
                                             self.check_and_store_result(
                                                 &file_path_str,
@@ -242,11 +350,11 @@ impl Scanner {
             }
         }
     }
-    
+
     /// Scan text file (CSV/TXT)
     async fn scan_text_file(&self, file_path: &Path) -> Result<(), String> {
         let file_path_str = file_path.to_string_lossy().to_string();
-        
+
         match fs::read(file_path) {
             Ok(bytes) => {
                 let content = if let Ok(s) = String::from_utf8(bytes.clone()) {
@@ -256,12 +364,12 @@ impl Scanner {
                     let (decoded, _, _) = encoding_rs::GB18030.decode(&bytes);
                     decoded.to_string()
                 };
-                
+
                 for (line_idx, line) in content.lines().enumerate() {
                     if !self.is_running.load(Ordering::SeqCst) {
                         break;
                     }
-                    
+
                     for (col_idx, cell) in line.split(',').enumerate() {
                         if !cell.trim().is_empty() {
                             self.check_and_store_result(
@@ -279,7 +387,7 @@ impl Scanner {
             Err(e) => Err(format!("Failed to read file: {}", e)),
         }
     }
-    
+
     /// Check cell content and store result if sensitive info is found
     async fn check_and_store_result(
         &self,
@@ -296,7 +404,7 @@ impl Scanner {
                 SensitiveType::Name => detect_name(content),
                 SensitiveType::Address => detect_address(content),
             };
-            
+
             if let Some(detected_content) = detected {
                 let result = ScanResult {
                     id: Uuid::new_v4().to_string(),
@@ -309,14 +417,33 @@ impl Scanner {
                     masked_content: mask_content(&detected_content, *sensitive_type),
                     found_at: Utc::now(),
                 };
-                
+
                 if self.db.insert_scan_result(&result).is_ok() {
                     self.results_found.fetch_add(1, Ordering::SeqCst);
+
+                    // Emit result event
+                    if let Some(app) = &self.app_handle {
+                        let result_data = serde_json::json!({
+                            "id": result.id,
+                            "file_path": result.file_path,
+                            "sheet_name": result.sheet_name,
+                            "row": result.row,
+                            "column": result.column,
+                            "sensitive_type": result.sensitive_type,
+                            "content": result.content,
+                            "masked_content": result.masked_content,
+                            "found_at": result.found_at,
+                        });
+
+                        if let Err(e) = app.emit("scan-result", result_data) {
+                            eprintln!("Failed to emit result event: {}", e);
+                        }
+                    }
                 }
             }
         }
     }
-    
+
     /// Get current statistics
     pub fn get_stats(&self) -> (u64, u64) {
         (
