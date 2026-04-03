@@ -85,8 +85,8 @@ jobs:
         with:
           name: linux-artifacts
           path: |
-            src-tauri/target/release/bundle/appimage/
-            src-tauri/target/release/bundle/deb/
+            src-tauri/target/release/bundle/appimage/*
+            src-tauri/target/release/bundle/deb/*
           if-no-files-found: warn
           retention-days: 5
 
@@ -154,14 +154,33 @@ jobs:
       - name: Create portable zip
         shell: pwsh
         run: |
-          $exePath = Get-ChildItem -Path "src-tauri\target\release\" -Filter "*.exe" | Where-Object { $_.Name -notlike "*setup*" -and $_.Name -notlike "*install*" } | Select-Object -First 1
+          Write-Host "=== Looking for executable files ==="
+          $exeFiles = Get-ChildItem -Path "src-tauri\target\release\" -Filter "*.exe" -File
+          foreach ($file in $exeFiles) {
+            Write-Host "Found: $($file.Name)"
+          }
+
+          # Find the main executable (not setup/install)
+          $exePath = $exeFiles | Where-Object { $_.Name -notlike "*setup*" -and $_.Name -notlike "*install*" } | Select-Object -First 1
+
           if ($exePath) {
             $appName = [System.IO.Path]::GetFileNameWithoutExtension($exePath.Name)
             $zipName = "${appName}-portable.zip"
-            Compress-Archive -Path $exePath.FullName -DestinationPath "src-tauri\target\release\$zipName"
+            Write-Host "Creating portable zip from: $($exePath.FullName)"
+            Compress-Archive -Path $exePath.FullName -DestinationPath "src-tauri\target\release\$zipName" -Force
             Write-Host "Created portable zip: $zipName"
+
+            # Verify the zip was created
+            if (Test-Path "src-tauri\target\release\$zipName") {
+              $zipSize = (Get-Item "src-tauri\target\release\$zipName").Length
+              Write-Host "Zip file size: $zipSize bytes"
+            } else {
+              Write-Host "ERROR: Zip file was not created!"
+              exit 1
+            }
           } else {
-            Write-Host "No portable executable found"
+            Write-Host "ERROR: No portable executable found!"
+            exit 1
           }
 
       - name: Upload artifacts
@@ -169,7 +188,7 @@ jobs:
         with:
           name: windows-artifacts
           path: |
-            src-tauri/target/release/bundle/nsis/
+            src-tauri/target/release/bundle/nsis/*
             src-tauri/target/release/*-portable.zip
           if-no-files-found: warn
           retention-days: 5
