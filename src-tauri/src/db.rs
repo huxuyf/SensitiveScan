@@ -127,7 +127,8 @@ impl Database {
 
         query.push_str(&format!(" ORDER BY found_at DESC LIMIT {} OFFSET {}", limit, offset));
 
-        let mut stmt = self.conn.lock().unwrap().prepare(&query)?;
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(&query)?;
         let results = stmt.query_map([], |row| {
             Ok(ScanResult {
                 id: row.get(0)?,
@@ -153,7 +154,8 @@ impl Database {
 
     /// Count scan results
     pub fn count_scan_results(&self) -> SqlResult<u64> {
-        let mut stmt = self.conn.lock().unwrap().prepare("SELECT COUNT(*) FROM scan_results")?;
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT COUNT(*) FROM scan_results")?;
         stmt.query_row([], |row| row.get(0))
     }
 
@@ -192,7 +194,8 @@ impl Database {
     /// Get scan history
     pub fn get_scan_history(&self, limit: Option<i64>) -> SqlResult<Vec<crate::models::ScanHistory>> {
         let limit = limit.unwrap_or(100);
-        let mut stmt = self.conn.lock().unwrap().prepare(
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
             "SELECT id, scan_paths, config, stats, created_at, completed_at FROM scan_history
              ORDER BY created_at DESC LIMIT ?"
         )?;
@@ -258,7 +261,8 @@ impl Database {
 
     /// Get whitelist
     pub fn get_whitelist(&self) -> SqlResult<Vec<WhitelistEntry>> {
-        let mut stmt = self.conn.lock().unwrap().prepare(
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
             "SELECT id, content, sensitive_type, description, created_at FROM whitelist
              ORDER BY created_at DESC"
         )?;
