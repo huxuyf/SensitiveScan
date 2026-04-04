@@ -1,5 +1,5 @@
 {
-  "name": "--project-name",
+  "name": "sensitive-scan",
   "private": true,
   "version": "0.1.0",
   "type": "module",

@@ -175,14 +175,36 @@ const deleteResult = (row: any) => {
   })
 }
 
-const exportResults = () => {
+const exportResults = async () => {
   if (results.value.length === 0) {
     ElMessage.warning('没有结果可导出')
     return
   }
 
-  // TODO: Implement export functionality
-  ElMessage.info('导出功能开发中...')
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    const path = await save({
+      filters: [{
+        name: 'CSV',
+        extensions: ['csv']
+      }],
+      defaultPath: 'scan_results.csv'
+    })
+
+    if (path) {
+      const result = await invoke<string>('export_results', {
+        format: 'csv',
+        filePath: path
+      })
+      const data = JSON.parse(result)
+      if (data.status === 'exported') {
+        ElMessage.success(`导出成功: ${data.file_path}`)
+      }
+    }
+  } catch (error) {
+    ElMessage.error('导出失败: ' + error)
+    console.error(error)
+  }
 }
 
 const clearResults = () => {

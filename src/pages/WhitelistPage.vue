@@ -69,8 +69,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { invoke } from '@tauri-apps/api/tauri'
 
 const whitelist = ref<any[]>([])
 const showAddDialogFlag = ref(false)
@@ -116,26 +117,18 @@ const addEntry = async () => {
   }
 
   try {
-    // TODO: Call Tauri command to add whitelist
-    // const result = await invoke('add_whitelist', {
-    //   content: formData.value.content,
-    //   sensitive_type: formData.value.sensitive_type,
-    //   description: formData.value.description
-    // })
-
-    const newEntry = {
-      id: Math.random().toString(36).substr(2, 9),
+    const result = await invoke<string>('add_whitelist', {
       content: formData.value.content,
-      sensitive_type: formData.value.sensitive_type,
-      description: formData.value.description,
-      created_at: new Date().toISOString()
-    }
+      sensitiveType: formData.value.sensitive_type,
+      description: formData.value.description
+    })
 
+    const newEntry = JSON.parse(result)
     whitelist.value.unshift(newEntry)
     showAddDialogFlag.value = false
     ElMessage.success('已添加')
   } catch (error) {
-    ElMessage.error('添加失败')
+    ElMessage.error('添加失败: ' + error)
   }
 }
 
@@ -144,12 +137,17 @@ const deleteEntry = (row: any) => {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(() => {
-    const index = whitelist.value.indexOf(row)
-    if (index > -1) {
-      whitelist.value.splice(index, 1)
+  }).then(async () => {
+    try {
+      await invoke('delete_whitelist', { entryId: row.id })
+      const index = whitelist.value.indexOf(row)
+      if (index > -1) {
+        whitelist.value.splice(index, 1)
+      }
+      ElMessage.success('已删除')
+    } catch (error) {
+      ElMessage.error('删除失败')
     }
-    ElMessage.success('已删除')
   }).catch(() => {
     ElMessage.info('已取消')
   })
@@ -158,16 +156,16 @@ const deleteEntry = (row: any) => {
 // Load whitelist from backend
 const loadWhitelist = async () => {
   try {
-    // TODO: Call Tauri command to get whitelist
-    // const result = await invoke('get_whitelist')
-    // whitelist.value = result
+    const result = await invoke<string>('get_whitelist')
+    whitelist.value = JSON.parse(result)
   } catch (error) {
     ElMessage.error('加载白名单失败')
   }
 }
 
-// Load on component mount
-loadWhitelist()
+onMounted(() => {
+  loadWhitelist()
+})
 </script>
 
 <style scoped lang="css">

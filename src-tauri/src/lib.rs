@@ -9,9 +9,13 @@ pub use commands::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let db = db::Database::new().expect("failed to initialize database");
+    let db_arc = Arc::new(db);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(db_arc)
         .invoke_handler(tauri::generate_handler![
             commands::select_folder,
             commands::start_scan,

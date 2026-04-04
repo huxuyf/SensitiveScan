@@ -7,6 +7,8 @@ use uuid::Uuid;
 use chrono::Utc;
 use tauri_plugin_dialog::DialogExt;
 use tauri::Emitter;
+use std::fs::File;
+use std::io::Write;
 
 // Global scanner instance
 static SCANNER: Mutex<Option<Arc<Scanner>>> = Mutex::new(None);
@@ -36,6 +38,7 @@ pub async fn select_folder(app: tauri::AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub async fn start_scan(
     app: tauri::AppHandle,
+    db: tauri::State<'_, Arc<Database>>,
     scan_paths: Vec<String>,
     exclude_paths: Vec<String>,
     max_file_size: u64,
@@ -65,8 +68,7 @@ pub async fn start_scan(
         thread_count: num_cpus::get().saturating_sub(1).max(1),
     };
 
-    let db = Database::new().map_err(|e| e.to_string())?;
-    let mut scanner = Scanner::new(config, Arc::new(db));
+    let mut scanner = Scanner::new(config, db.inner().clone());
 
     // Set app handle for event emission
     scanner.set_app_handle(app.clone());
@@ -142,13 +144,12 @@ pub async fn stop_scan() -> Result<String, String> {
 /// Get scan results
 #[tauri::command]
 pub async fn get_scan_results(
+    db: tauri::State<'_, Arc<Database>>,
     limit: Option<i64>,
     offset: Option<i64>,
     file_path_filter: Option<String>,
     sensitive_type_filter: Option<String>,
 ) -> Result<String, String> {
-    let db = Database::new().map_err(|e| e.to_string())?;
-    
     let results = db.get_scan_results(
         limit,
         offset,
@@ -156,37 +157,66 @@ pub async fn get_scan_results(
         sensitive_type_filter.as_deref(),
     ).map_err(|e| e.to_string())?;
     
-    Ok(serde_json::to_string(&results).unwrap_or_default())
+    serde_json::to_string(&results).map_err(|e| e.to_string())
 }
 
 /// Export scan results
 #[tauri::command]
 pub async fn export_results(
-    _format: String,
+    db: tauri::State<'_, Arc<Database>>,
+    format: String,
     file_path: String,
 ) -> Result<String, String> {
-    // TODO: Implement export logic
-    Ok(json!({
-        "status": "exported",
-        "file_path": file_path
-    }).to_string())
+    let results = db.get_scan_results(Some(10000), None, None, None)
+        .map_err(|e| e.to_string())?;
+
+    if format == "csv" {
+        let mut file = File::create(&file_path).map_err(|e| e.to_string())?;
+        
+        // Write CSV header
+        writeln!(file, "ID,File Path,Sheet,Row,Column,Type,Content,Found At")
+            .map_err(|e| e.to_string())?;
+        
+        for r in results {
+            writeln!(
+                file,
+                "\"{}\",\"{}\",\"{}\",{},{},\"{:?}\",\"{}\",\"{}\"",
+                r.id,
+                r.file_path.replace("\"", "\"\""),
+                r.sheet_name.unwrap_or_default().replace("\"", "\"\""),
+                r.row,
+                r.column,
+                r.sensitive_type,
+                r.content.replace("\"", "\"\""),
+                r.found_at.to_rfc3339()
+            ).map_err(|e| e.to_string())?;
+        }
+
+        Ok(json!({
+            "status": "exported",
+            "file_path": file_path
+        }).to_string())
+    } else {
+        Err("Unsupported format".to_string())
+    }
 }
 
 /// Get scan history
 #[tauri::command]
-pub async fn get_history(limit: Option<i64>) -> Result<String, String> {
-    let db = Database::new().map_err(|e| e.to_string())?;
-    
+pub async fn get_history(
+    db: tauri::State<'_, Arc<Database>>,
+    limit: Option<i64>
+) -> Result<String, String> {
     let history = db.get_scan_history(limit).map_err(|e| e.to_string())?;
-    
-    Ok(serde_json::to_string(&history).unwrap_or_default())
+    serde_json::to_string(&history).map_err(|e| e.to_string())
 }
 
 /// Delete scan history
 #[tauri::command]
-pub async fn delete_history(history_id: String) -> Result<String, String> {
-    let db = Database::new().map_err(|e| e.to_string())?;
-    
+pub async fn delete_history(
+    db: tauri::State<'_, Arc<Database>>,
+    history_id: String
+) -> Result<String, String> {
     db.delete_scan_history(&history_id).map_err(|e| e.to_string())?;
     
     Ok(json!({
@@ -197,12 +227,11 @@ pub async fn delete_history(history_id: String) -> Result<String, String> {
 /// Add whitelist entry
 #[tauri::command]
 pub async fn add_whitelist(
+    db: tauri::State<'_, Arc<Database>>,
     content: String,
     sensitive_type: String,
     description: Option<String>,
 ) -> Result<String, String> {
-    let db = Database::new().map_err(|e| e.to_string())?;
-    
     let sensitive_type = match sensitive_type.as_str() {
         "phonenumber" => SensitiveType::PhoneNumber,
         "idcard" => SensitiveType::IdCard,
@@ -221,24 +250,22 @@ pub async fn add_whitelist(
     
     db.add_whitelist(&entry).map_err(|e| e.to_string())?;
     
-    Ok(serde_json::to_string(&entry).unwrap_or_default())
+    serde_json::to_string(&entry).map_err(|e| e.to_string())
 }
 
 /// Get whitelist
 #[tauri::command]
-pub async fn get_whitelist() -> Result<String, String> {
-    let db = Database::new().map_err(|e| e.to_string())?;
-    
+pub async fn get_whitelist(db: tauri::State<'_, Arc<Database>>) -> Result<String, String> {
     let whitelist = db.get_whitelist().map_err(|e| e.to_string())?;
-    
-    Ok(serde_json::to_string(&whitelist).unwrap_or_default())
+    serde_json::to_string(&whitelist).map_err(|e| e.to_string())
 }
 
 /// Delete whitelist entry
 #[tauri::command]
-pub async fn delete_whitelist(entry_id: String) -> Result<String, String> {
-    let db = Database::new().map_err(|e| e.to_string())?;
-    
+pub async fn delete_whitelist(
+    db: tauri::State<'_, Arc<Database>>,
+    entry_id: String
+) -> Result<String, String> {
     db.delete_whitelist(&entry_id).map_err(|e| e.to_string())?;
     
     Ok(json!({
@@ -248,9 +275,7 @@ pub async fn delete_whitelist(entry_id: String) -> Result<String, String> {
 
 /// Get scan statistics
 #[tauri::command]
-pub async fn get_scan_stats() -> Result<String, String> {
-    let db = Database::new().map_err(|e| e.to_string())?;
-    
+pub async fn get_scan_stats(db: tauri::State<'_, Arc<Database>>) -> Result<String, String> {
     let total_results = db.count_scan_results().map_err(|e| e.to_string())?;
     
     Ok(json!({

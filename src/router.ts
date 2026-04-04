@@ -1,8 +1,8 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import ScanPage from './ScanPage.vue'
-import ResultsPage from './ResultsPage.vue'
-import HistoryPage from './HistoryPage.vue'
-import WhitelistPage from './WhitelistPage.vue'
+import ScanPage from './pages/ScanPage.vue'
+import ResultsPage from './pages/ResultsPage.vue'
+import HistoryPage from './pages/HistoryPage.vue'
+import WhitelistPage from './pages/WhitelistPage.vue'
 
 const routes = [
   {

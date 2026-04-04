@@ -85,8 +85,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { invoke } from '@tauri-apps/api/tauri'
 
 const history = ref<any[]>([])
 const showDetailsDialog = ref(false)
@@ -102,12 +103,17 @@ const deleteHistory = (row: any) => {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(() => {
-    const index = history.value.indexOf(row)
-    if (index > -1) {
-      history.value.splice(index, 1)
+  }).then(async () => {
+    try {
+      await invoke('delete_history', { historyId: row.id })
+      const index = history.value.indexOf(row)
+      if (index > -1) {
+        history.value.splice(index, 1)
+      }
+      ElMessage.success('已删除')
+    } catch (error) {
+      ElMessage.error('删除失败: ' + error)
     }
-    ElMessage.success('已删除')
   }).catch(() => {
     ElMessage.info('已取消')
   })
@@ -118,9 +124,17 @@ const clearHistory = () => {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(() => {
-    history.value = []
-    ElMessage.success('已清空')
+  }).then(async () => {
+    try {
+      // 循环删除或后端提供清空接口，当前 commands.rs 暂无清空接口，通过循环模拟
+      for (const item of history.value) {
+        await invoke('delete_history', { historyId: item.id })
+      }
+      history.value = []
+      ElMessage.success('已清空')
+    } catch (error) {
+      ElMessage.error('清空失败')
+    }
   }).catch(() => {
     ElMessage.info('已取消')
   })
@@ -129,16 +143,17 @@ const clearHistory = () => {
 // Load history from backend
 const loadHistory = async () => {
   try {
-    // TODO: Call Tauri command to get history
-    // const result = await invoke('get_history', { limit: 100 })
-    // history.value = result
+    const result = await invoke<string>('get_history', { limit: 100 })
+    history.value = JSON.parse(result)
   } catch (error) {
     ElMessage.error('加载历史记录失败')
+    console.error(error)
   }
 }
 
-// Load on component mount
-loadHistory()
+onMounted(() => {
+  loadHistory()
+})
 </script>
 
 <style scoped lang="css">
