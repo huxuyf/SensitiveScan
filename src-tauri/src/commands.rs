@@ -1,19 +1,19 @@
-use serde_json::json;
-use crate::models::{ScanConfig, SensitiveType, WhitelistEntry};
+use crate::models::{ScanConfig, SensitiveType};
 use crate::db::Database;
 use crate::scanner::Scanner;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use chrono::Utc;
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 use tauri::Emitter;
 use std::fs::File;
 use std::io::Write;
 
-// Global scanner instance
+// 全局扫描器实例
 static SCANNER: Mutex<Option<Arc<Scanner>>> = Mutex::new(None);
 
-/// Select a folder using system dialog
+/// 使用系统对话框选择文件夹
 #[tauri::command]
 pub async fn select_folder(app: tauri::AppHandle) -> Result<String, String> {
     use tokio::sync::oneshot;
@@ -30,11 +30,11 @@ pub async fn select_folder(app: tauri::AppHandle) -> Result<String, String> {
 
     match folder_path {
         Some(path) => Ok(path.to_string()),
-        None => Err("No folder selected".to_string()),
+        None => Err("未选择任何文件夹".to_string()),
     }
 }
 
-/// Start a new scan task
+/// 启动一个新的扫描任务
 #[tauri::command]
 pub async fn start_scan(
     app: tauri::AppHandle,
@@ -44,6 +44,9 @@ pub async fn start_scan(
     max_file_size: u64,
     sensitive_types: Vec<String>,
 ) -> Result<String, String> {
+    // 从数据库中清除先前的结果
+    let _ = db.delete_scan_results();
+
     let config = ScanConfig {
         scan_paths,
         exclude_paths,
@@ -70,215 +73,181 @@ pub async fn start_scan(
 
     let mut scanner = Scanner::new(config, db.inner().clone());
 
-    // Set app handle for event emission
+    // 设置应用程序句柄以进行事件发射
     scanner.set_app_handle(app.clone());
 
-    // Store scanner instance globally
+    // 将扫描器实例全局存储
     let scanner_arc = Arc::new(scanner);
     {
         let mut guard = SCANNER.lock().unwrap();
         *guard = Some(scanner_arc.clone());
     }
 
-    // Start scanning in background
+    // 在后台启动扫描
     let scanner_clone = scanner_arc.clone();
     tokio::spawn(async move {
         if let Err(e) = scanner_clone.start_scan().await {
-            eprintln!("Scan error: {}", e);
+            eprintln!("扫描产生错误: {}", e);
         }
 
-        // Emit completion event
-        if let Err(e) = app.emit("scan-complete", json!({"status": "completed"})) {
-            eprintln!("Failed to emit scan-complete event: {}", e);
-        }
+        // 触发完成事件
+        let _ = app.emit("scan-complete", serde_json::json!({"status": "completed"}));
     });
 
-    Ok(json!({
+    Ok(serde_json::json!({
         "task_id": Uuid::new_v4().to_string(),
         "status": "started"
     }).to_string())
 }
 
-/// Pause current scan
+/// 暂停当前进行中的扫描
 #[tauri::command]
 pub async fn pause_scan() -> Result<String, String> {
     let guard = SCANNER.lock().unwrap();
     if let Some(scanner) = guard.as_ref() {
         scanner.pause_scan();
-        Ok(json!({
+        Ok(serde_json::json!({
             "status": "paused"
         }).to_string())
     } else {
-        Err("No active scan".to_string())
+        Err("当前未进行活动扫描任务".to_string())
     }
 }
 
-/// Resume paused scan
+/// 恢复已暂停的扫描
 #[tauri::command]
 pub async fn resume_scan() -> Result<String, String> {
     let guard = SCANNER.lock().unwrap();
     if let Some(scanner) = guard.as_ref() {
         scanner.resume_scan();
-        Ok(json!({
+        Ok(serde_json::json!({
             "status": "resumed"
         }).to_string())
     } else {
-        Err("No active scan".to_string())
+        Err("当前未进行活动扫描任务".to_string())
     }
 }
 
-/// Stop current scan
+/// 停止当前进行中的扫描
 #[tauri::command]
 pub async fn stop_scan() -> Result<String, String> {
     let guard = SCANNER.lock().unwrap();
     if let Some(scanner) = guard.as_ref() {
         scanner.stop_scan();
-        Ok(json!({
+        Ok(serde_json::json!({
             "status": "stopped"
         }).to_string())
     } else {
-        Err("No active scan".to_string())
+        Err("当前未进行活动扫描任务".to_string())
     }
 }
 
-/// Get scan results
+/// 获取按文件归总的扫描结果记录
 #[tauri::command]
-pub async fn get_scan_results(
+pub async fn get_aggregated_results(
     db: tauri::State<'_, Arc<Database>>,
-    limit: Option<i64>,
-    offset: Option<i64>,
-    file_path_filter: Option<String>,
-    sensitive_type_filter: Option<String>,
+    threshold: Option<u32>,
 ) -> Result<String, String> {
-    let results = db.get_scan_results(
-        limit,
-        offset,
-        file_path_filter.as_deref(),
-        sensitive_type_filter.as_deref(),
-    ).map_err(|e| e.to_string())?;
+    let threshold = threshold.unwrap_or(50);
+    let results = db.get_aggregated_results(threshold)
+        .map_err(|e: rusqlite::Error| e.to_string())?;
     
     serde_json::to_string(&results).map_err(|e| e.to_string())
 }
 
-/// Export scan results
+/// 清除当前库中所有的扫描记录结果
+#[tauri::command]
+pub async fn clear_results(db: tauri::State<'_, Arc<Database>>) -> Result<String, String> {
+    db.delete_scan_results().map_err(|e: rusqlite::Error| e.to_string())?;
+    Ok(serde_json::json!({ "status": "cleared" }).to_string())
+}
+
+/// 利用系统默认程序打开文件
+#[tauri::command]
+pub async fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    app.opener()
+       .open_path(path, Option::<String>::None)
+       .map_err(|e| e.to_string())
+}
+
+/// 从磁盘和数据库中物理删除对应文件和它相关的记录
+#[tauri::command]
+pub async fn delete_file(
+    db: tauri::State<'_, Arc<Database>>,
+    path: String
+) -> Result<String, String> {
+    // 1. 从磁盘中删除
+    if std::path::Path::new(&path).exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("从磁盘删除文件失败: {}", e))?;
+    }
+
+    // 2. 从数据库中删除相关记录表
+    db.delete_results_by_file(&path).map_err(|e: rusqlite::Error| format!("从底层数据库清理该条记录失败: {}", e))?;
+
+    Ok(serde_json::json!({ "status": "deleted" }).to_string())
+}
+
+/// 导出按要求配置格式的扫描结果汇总表
 #[tauri::command]
 pub async fn export_results(
     db: tauri::State<'_, Arc<Database>>,
     format: String,
     file_path: String,
 ) -> Result<String, String> {
-    let results = db.get_scan_results(Some(10000), None, None, None)
-        .map_err(|e| e.to_string())?;
+    let results = db.get_aggregated_results(0)
+        .map_err(|e: rusqlite::Error| e.to_string())?;
 
-    if format == "csv" {
+    if format == "csv" || format == "xlsx" {
         let mut file = File::create(&file_path).map_err(|e| e.to_string())?;
         
-        // Write CSV header
-        writeln!(file, "ID,File Path,Sheet,Row,Column,Type,Content,Found At")
-            .map_err(|e| e.to_string())?;
+        // 写入 UTF-8 BOM 使 Excel 下避免乱码情形
+        let _ = file.write_all(&[0xEF, 0xBB, 0xBF]);
+
+        // 写入导出用的表头 Header 列名字段
+        let _ = writeln!(file, "文件名,文件路径,文件大小,文件类型,涉敏类型");
         
         for r in results {
-            writeln!(
+            let file_size_f: f64 = r.file_size as f64;
+            let kb = file_size_f / 1024.0;
+            let size_str = if kb < 1024.0 {
+                format!("{:.0} KB", kb.max(1.0))
+            } else {
+                let mb = kb / 1024.0;
+                format!("{:.2} MB", mb)
+            };
+
+            let translated_types = r.sensitive_types
+                .replace("PhoneNumber", "手机号码")
+                .replace("IdCard", "身份证号")
+                .replace("Name", "姓名")
+                .replace("Address", "地址");
+
+            let _ = writeln!(
                 file,
-                "\"{}\",\"{}\",\"{}\",{},{},\"{:?}\",\"{}\",\"{}\"",
-                r.id,
+                "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"",
+                r.file_name.replace("\"", "\"\""),
                 r.file_path.replace("\"", "\"\""),
-                r.sheet_name.unwrap_or_default().replace("\"", "\"\""),
-                r.row,
-                r.column,
-                r.sensitive_type,
-                r.content.replace("\"", "\"\""),
-                r.found_at.to_rfc3339()
-            ).map_err(|e| e.to_string())?;
+                size_str,
+                r.file_type.replace("\"", "\"\""),
+                translated_types.replace("\"", "\"\"")
+            );
         }
 
-        Ok(json!({
+        Ok(serde_json::json!({
             "status": "exported",
             "file_path": file_path
         }).to_string())
     } else {
-        Err("Unsupported format".to_string())
+        Err("不受系统支持的文件转换格式".to_string())
     }
 }
 
-/// Get scan history
-#[tauri::command]
-pub async fn get_history(
-    db: tauri::State<'_, Arc<Database>>,
-    limit: Option<i64>
-) -> Result<String, String> {
-    let history = db.get_scan_history(limit).map_err(|e| e.to_string())?;
-    serde_json::to_string(&history).map_err(|e| e.to_string())
-}
-
-/// Delete scan history
-#[tauri::command]
-pub async fn delete_history(
-    db: tauri::State<'_, Arc<Database>>,
-    history_id: String
-) -> Result<String, String> {
-    db.delete_scan_history(&history_id).map_err(|e| e.to_string())?;
-    
-    Ok(json!({
-        "status": "deleted"
-    }).to_string())
-}
-
-/// Add whitelist entry
-#[tauri::command]
-pub async fn add_whitelist(
-    db: tauri::State<'_, Arc<Database>>,
-    content: String,
-    sensitive_type: String,
-    description: Option<String>,
-) -> Result<String, String> {
-    let sensitive_type = match sensitive_type.as_str() {
-        "phonenumber" => SensitiveType::PhoneNumber,
-        "idcard" => SensitiveType::IdCard,
-        "name" => SensitiveType::Name,
-        "address" => SensitiveType::Address,
-        _ => return Err("Invalid sensitive type".to_string()),
-    };
-    
-    let entry = WhitelistEntry {
-        id: Uuid::new_v4().to_string(),
-        content,
-        sensitive_type,
-        description,
-        created_at: Utc::now(),
-    };
-    
-    db.add_whitelist(&entry).map_err(|e| e.to_string())?;
-    
-    serde_json::to_string(&entry).map_err(|e| e.to_string())
-}
-
-/// Get whitelist
-#[tauri::command]
-pub async fn get_whitelist(db: tauri::State<'_, Arc<Database>>) -> Result<String, String> {
-    let whitelist = db.get_whitelist().map_err(|e| e.to_string())?;
-    serde_json::to_string(&whitelist).map_err(|e| e.to_string())
-}
-
-/// Delete whitelist entry
-#[tauri::command]
-pub async fn delete_whitelist(
-    db: tauri::State<'_, Arc<Database>>,
-    entry_id: String
-) -> Result<String, String> {
-    db.delete_whitelist(&entry_id).map_err(|e| e.to_string())?;
-    
-    Ok(json!({
-        "status": "deleted"
-    }).to_string())
-}
-
-/// Get scan statistics
+/// 获取全局扫描统计数
 #[tauri::command]
 pub async fn get_scan_stats(db: tauri::State<'_, Arc<Database>>) -> Result<String, String> {
-    let total_results = db.count_scan_results().map_err(|e| e.to_string())?;
+    let total_results = db.count_scan_results().map_err(|e: rusqlite::Error| e.to_string())?;
     
-    Ok(json!({
+    Ok(serde_json::json!({
         "total_results": total_results,
         "timestamp": Utc::now().to_rfc3339()
     }).to_string())

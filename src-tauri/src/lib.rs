@@ -7,6 +7,8 @@ mod commands;
 
 pub use commands::*;
 
+use std::sync::Arc;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let db = db::Database::new().expect("failed to initialize database");
@@ -22,14 +24,12 @@ pub fn run() {
             commands::pause_scan,
             commands::resume_scan,
             commands::stop_scan,
-            commands::get_scan_results,
+            commands::get_aggregated_results,
+            commands::open_file,
+            commands::delete_file,
             commands::export_results,
-            commands::get_history,
-            commands::delete_history,
-            commands::add_whitelist,
-            commands::get_whitelist,
-            commands::delete_whitelist,
             commands::get_scan_stats,
+            commands::clear_results,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

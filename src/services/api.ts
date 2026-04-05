@@ -32,7 +32,7 @@ export interface ScanProgress {
 
 export class TauriAPI {
   /**
-   * Start a new scan task
+   * 启动全新的扫描任务
    */
   static async startScan(config: ScanConfig): Promise<string> {
     try {
@@ -44,171 +44,116 @@ export class TauriAPI {
       })
       return JSON.parse(result as string)
     } catch (error) {
-      console.error('Failed to start scan:', error)
+      console.error('启动扫描失败:', error)
       throw error
     }
   }
 
   /**
-   * Pause current scan
+   * 暂停正在进行的扫描
    */
   static async pauseScan(): Promise<void> {
     try {
       await invoke('pause_scan')
     } catch (error) {
-      console.error('Failed to pause scan:', error)
+      console.error('暂停扫描失败:', error)
       throw error
     }
   }
 
   /**
-   * Resume paused scan
+   * 继续恢复扫描过程
    */
   static async resumeScan(): Promise<void> {
     try {
       await invoke('resume_scan')
     } catch (error) {
-      console.error('Failed to resume scan:', error)
+      console.error('恢复扫描失败:', error)
       throw error
     }
   }
 
   /**
-   * Stop current scan
+   * 强行中断并停止扫描任务
    */
   static async stopScan(): Promise<void> {
     try {
       await invoke('stop_scan')
     } catch (error) {
-      console.error('Failed to stop scan:', error)
+      console.error('停止扫描任务失败:', error)
       throw error
     }
   }
 
   /**
-   * Get scan results
+   * 请求后端提供归总后的敏感结果
    */
-  static async getScanResults(
-    limit?: number,
-    offset?: number,
-    file_path_filter?: string,
-    sensitive_type_filter?: string
-  ): Promise<ScanResult[]> {
+  static async getAggregatedResults(threshold?: number): Promise<any[]> {
     try {
-      const result = await invoke('get_scan_results', {
-        limit,
-        offset,
-        file_path_filter,
-        sensitive_type_filter
+      const result = await invoke('get_aggregated_results', {
+        threshold
       })
       return JSON.parse(result as string)
     } catch (error) {
-      console.error('Failed to get scan results:', error)
+      console.error('获取结果列表数据失败:', error)
       throw error
     }
   }
 
   /**
-   * Export scan results
+   * 通知系统以此路径打开文件
    */
-  static async exportResults(format: string, file_path: string): Promise<void> {
+  static async openFile(path: string): Promise<void> {
+    try {
+      await invoke('open_file', { path })
+    } catch (error) {
+      console.error('调起原生应用打开文件失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 发出指令清理此文件相关磁盘和数据库内容
+   */
+  static async deleteFile(path: string): Promise<void> {
+    try {
+      await invoke('delete_file', { path })
+    } catch (error) {
+      console.error('删除指定文件失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 下载或导出当前的判定结果
+   */
+  static async exportResults(format: string, filePath: string): Promise<void> {
     try {
       await invoke('export_results', {
         format,
-        file_path
+        filePath
       })
     } catch (error) {
-      console.error('Failed to export results:', error)
+      console.error('保存导出数据失败:', error)
       throw error
     }
   }
 
   /**
-   * Get scan history
-   */
-  static async getHistory(limit?: number): Promise<any[]> {
-    try {
-      const result = await invoke('get_history', { limit })
-      return JSON.parse(result as string)
-    } catch (error) {
-      console.error('Failed to get history:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Delete scan history
-   */
-  static async deleteHistory(history_id: string): Promise<void> {
-    try {
-      await invoke('delete_history', { history_id })
-    } catch (error) {
-      console.error('Failed to delete history:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Add whitelist entry
-   */
-  static async addWhitelist(
-    content: string,
-    sensitive_type: string,
-    description?: string
-  ): Promise<any> {
-    try {
-      const result = await invoke('add_whitelist', {
-        content,
-        sensitive_type,
-        description
-      })
-      return JSON.parse(result as string)
-    } catch (error) {
-      console.error('Failed to add whitelist:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Get whitelist
-   */
-  static async getWhitelist(): Promise<any[]> {
-    try {
-      const result = await invoke('get_whitelist')
-      return JSON.parse(result as string)
-    } catch (error) {
-      console.error('Failed to get whitelist:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Delete whitelist entry
-   */
-  static async deleteWhitelist(entry_id: string): Promise<void> {
-    try {
-      await invoke('delete_whitelist', { entry_id })
-    } catch (error) {
-      console.error('Failed to delete whitelist:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Get scan statistics
+   * 获取概况统计数字
    */
   static async getScanStats(): Promise<any> {
     try {
       const result = await invoke('get_scan_stats')
       return JSON.parse(result as string)
     } catch (error) {
-      console.error('Failed to get scan stats:', error)
+      console.error('读取全库统计信息失败:', error)
       throw error
     }
   }
 
   /**
-   * Listen to scan progress events
+   * 订阅获取后端进度同步事件
    */
   static async onScanProgress(callback: (progress: ScanProgress) => void): Promise<() => void> {
     try {
@@ -217,13 +162,13 @@ export class TauriAPI {
       })
       return unlisten
     } catch (error) {
-      console.error('Failed to listen to scan progress:', error)
+      console.error('注册进度事件监听回调发生异常:', error)
       throw error
     }
   }
 
   /**
-   * Listen to scan result events
+   * 订阅后端底层返回的结果事件
    */
   static async onScanResult(callback: (result: ScanResult) => void): Promise<() => void> {
     try {
@@ -232,13 +177,13 @@ export class TauriAPI {
       })
       return unlisten
     } catch (error) {
-      console.error('Failed to listen to scan result:', error)
+      console.error('注册单结果回调通道失败:', error)
       throw error
     }
   }
 
   /**
-   * Listen to scan completion events
+   * 监听完毕事件通知
    */
   static async onScanComplete(callback: (stats: any) => void): Promise<() => void> {
     try {
@@ -247,8 +192,10 @@ export class TauriAPI {
       })
       return unlisten
     } catch (error) {
-      console.error('Failed to listen to scan complete:', error)
+      console.error('注册扫描任务全域完成事件监听失败:', error)
       throw error
     }
   }
 }
+
+export const API = TauriAPI

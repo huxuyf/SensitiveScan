@@ -1,257 +1,323 @@
 <template>
   <div class="results-page">
-    <el-card>
+    <el-card shadow="never" class="results-card">
       <template #header>
         <div class="card-header">
-          <span class="title">扫描结果</span>
-          <div class="actions">
-            <el-input
-              v-model="searchText"
-              placeholder="搜索..."
-              style="width: 200px"
-            />
-            <el-select v-model="filterType" placeholder="筛选类型" style="width: 150px; margin-left: 10px">
-              <el-option label="全部" value="" />
-              <el-option label="手机号" value="PhoneNumber" />
-              <el-option label="身份证" value="IdCard" />
-              <el-option label="姓名" value="Name" />
-              <el-option label="地址" value="Address" />
-            </el-select>
-            <el-button @click="exportResults" style="margin-left: 10px">导出</el-button>
-            <el-button @click="clearResults" type="danger" style="margin-left: 10px">清空</el-button>
+          <div class="header-left">
+            <span class="title">扫描结果汇总</span>
+            <el-tag type="info" class="count-tag">共发现 {{ scanStore.aggregatedResults.length }} 个涉敏文件</el-tag>
+          </div>
+          <div class="header-actions">
+            <el-button type="primary" @click="exportToExcel" :disabled="!scanStore.aggregatedResults.length">
+              <el-icon><Download /></el-icon>导出 Excel
+            </el-button>
+            <el-button
+              type="danger"
+              :plain="selectedRows.length === 0"
+              @click="handleBatchDelete"
+              :disabled="selectedRows.length === 0"
+            >
+              <el-icon><Delete /></el-icon>
+              {{ selectedRows.length > 0 ? `删除选中 (${selectedRows.length})` : '删除' }}
+            </el-button>
+            <el-button type="info" plain @click="clearResults">
+              <el-icon><Refresh /></el-icon>清空结果
+            </el-button>
           </div>
         </div>
       </template>
 
       <el-table
-        :data="filteredResults"
+        :data="pagedResults"
         stripe
         style="width: 100%"
-        :default-sort="{ prop: 'found_at', order: 'descending' }"
-        max-height="600"
+        @selection-change="handleSelectionChange"
+        :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: 'bold' }"
       >
-        <el-table-column prop="file_path" label="文件路径" width="250" show-overflow-tooltip />
-        <el-table-column prop="sheet_name" label="Sheet页" width="100" />
-        <el-table-column prop="row" label="行号" width="80" />
-        <el-table-column prop="column" label="列号" width="80" />
-        <el-table-column prop="sensitive_type" label="类型" width="100">
+        <el-table-column type="selection" width="55" />
+        
+        <el-table-column prop="file_name" label="文件名" min-width="150" show-overflow-tooltip />
+        
+        <el-table-column prop="sensitive_types" label="涉敏类型" min-width="180">
           <template #default="{ row }">
-            <el-tag :type="getTypeColor(row.sensitive_type)">
-              {{ getTypeName(row.sensitive_type) }}
+            <el-tag
+              v-for="type in row.sensitive_types.split('+')"
+              :key="type"
+              size="small"
+              effect="plain"
+              class="type-tag"
+            >
+              {{ translateType(type) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="masked_content" label="内容（脱敏）" width="150" show-overflow-tooltip />
-        <el-table-column prop="found_at" label="发现时间" width="180" sortable />
-        <el-table-column label="操作" width="120" fixed="right">
+
+        <el-table-column prop="file_size" label="文件大小" width="100">
           <template #default="{ row }">
-            <el-button link type="primary" @click="showDetail(row)">查看</el-button>
-            <el-button link type="danger" @click="deleteResult(row)">删除</el-button>
+            {{ formatFileSize(row.file_size) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="file_path" label="文件路径" min-width="250" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ formatFilePath(row.file_path) }}
+          </template>
+        </el-table-column>
+        
+        <el-table-column label="操作" width="150" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openFile(row.file_path)">打开</el-button>
+            <el-button link type="danger" @click="confirmDelete(row.file_path)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
 
-      <!-- Pagination -->
-      <div class="pagination-container">
+      <div class="pagination-container" v-if="scanStore.aggregatedResults.length > 0">
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :page-sizes="[10, 20, 50, 100]"
-          :total="results.length"
           layout="total, sizes, prev, pager, next, jumper"
+          :total="scanStore.aggregatedResults.length"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
         />
       </div>
-    </el-card>
 
-    <!-- Detail Dialog -->
-    <el-dialog v-model="showDetailDialog" title="结果详情" width="600px">
-      <div v-if="selectedResult" class="detail-content">
-        <el-descriptions :column="1" border>
-          <el-descriptions-item label="文件路径">
-            {{ selectedResult.file_path }}
-          </el-descriptions-item>
-          <el-descriptions-item label="Sheet页">
-            {{ selectedResult.sheet_name || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="位置">
-            行 {{ selectedResult.row }} 列 {{ selectedResult.column }}
-          </el-descriptions-item>
-          <el-descriptions-item label="敏感类型">
-            {{ getTypeName(selectedResult.sensitive_type) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="原始内容">
-            <el-input
-              v-model="selectedResult.content"
-              type="textarea"
-              readonly
-              rows="3"
-            />
-          </el-descriptions-item>
-          <el-descriptions-item label="发现时间">
-            {{ selectedResult.found_at }}
-          </el-descriptions-item>
-        </el-descriptions>
+      <div v-if="!scanStore.aggregatedResults.length && !scanStore.isScanning" class="empty-state">
+        <el-empty description="暂无符合条件的涉敏文件" />
       </div>
-    </el-dialog>
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useScanStore } from '../stores/scanStore'
+import { API } from '../services/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { invoke } from '@tauri-apps/api/core'
+import {
+  Download,
+  Delete,
+  Refresh
+} from '@element-plus/icons-vue'
 
 const scanStore = useScanStore()
 
-const searchText = ref('')
-const filterType = ref('')
+// 分页状态管理
 const currentPage = ref(1)
-const pageSize = ref(20)
-const showDetailDialog = ref(false)
-const selectedResult = ref(null)
+const pageSize = ref(10)
 
-const results = computed(() => scanStore.results)
+// 当前选中的行记录
+const selectedRows = ref<any[]>([])
 
-const filteredResults = computed(() => {
-  let filtered = results.value
-
-  if (searchText.value) {
-    const search = searchText.value.toLowerCase()
-    filtered = filtered.filter(r =>
-      r.file_path.toLowerCase().includes(search) ||
-      r.content.toLowerCase().includes(search) ||
-      r.masked_content.toLowerCase().includes(search)
-    )
-  }
-
-  if (filterType.value) {
-    filtered = filtered.filter(r => r.sensitive_type === filterType.value)
-  }
-
-  // Pagination
+const pagedResults = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   const end = start + pageSize.value
-  return filtered.slice(start, end)
+  return scanStore.aggregatedResults.slice(start, end)
 })
 
-const getTypeName = (type: string) => {
-  const typeMap: Record<string, string> = {
-    'PhoneNumber': '手机号',
-    'IdCard': '身份证',
+onMounted(async () => {
+  await refreshResults()
+})
+
+const refreshResults = async () => {
+  try {
+    // 依然获取汇总结果，但在后端已经受熔断逻辑保护
+    const results = await API.getAggregatedResults(50)
+    scanStore.setAggregatedResults(results)
+  } catch (error) {
+    console.error('加载记录列表失败:', error)
+  }
+}
+
+const handleSelectionChange = (val: any[]) => {
+  selectedRows.value = val
+}
+
+const handleSizeChange = (val: number) => {
+  pageSize.value = val
+  currentPage.value = 1
+}
+
+const handleCurrentChange = (val: number) => {
+  currentPage.value = val
+}
+
+const translateType = (type: string) => {
+  const map: Record<string, string> = {
+    'PhoneNumber': '手机号码',
+    'IdCard': '身份证号',
     'Name': '姓名',
     'Address': '地址'
   }
-  return typeMap[type] || type
+  return map[type] || type
 }
 
-const getTypeColor = (type: string) => {
-  const colorMap: Record<string, string> = {
-    'PhoneNumber': 'success',
-    'IdCard': 'warning',
-    'Name': 'info',
-    'Address': 'danger'
+const formatFileSize = (bytes: number) => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+const openFile = async (path: string) => {
+  try {
+    await API.openFile(path)
+  } catch (error) {
+    ElMessage.error('无法打开文件: ' + error)
   }
-  return colorMap[type] || 'info'
 }
 
-const showDetail = (row: any) => {
-  selectedResult.value = row
-  showDetailDialog.value = true
-}
-
-const deleteResult = (row: any) => {
-  ElMessageBox.confirm('确定删除该结果？', '警告', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    const index = scanStore.results.indexOf(row)
-    if (index > -1) {
-      scanStore.results.splice(index, 1)
+const confirmDelete = (path: string) => {
+  ElMessageBox.confirm(
+    `确定要从磁盘上永久删除该文件吗？\n${path}`,
+    '物理删除确认',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
     }
-    ElMessage.success('已删除')
-  }).catch(() => {
-    ElMessage.info('已取消删除')
+  ).then(async () => {
+    try {
+      await API.deleteFile(path)
+      ElMessage.success('文件已物理删除')
+      await refreshResults()
+    } catch (error) {
+      ElMessage.error('删除失败: ' + error)
+    }
   })
 }
 
-const exportResults = async () => {
-  if (results.value.length === 0) {
-    ElMessage.warning('没有结果可导出')
-    return
-  }
-
-  try {
-    const { save } = await import('@tauri-apps/plugin-dialog')
-    const path = await save({
-      filters: [{
-        name: 'CSV',
-        extensions: ['csv']
-      }],
-      defaultPath: 'scan_results.csv'
-    })
-
-    if (path) {
-      const result = await invoke<string>('export_results', {
-        format: 'csv',
-        filePath: path
-      })
-      const data = JSON.parse(result)
-      if (data.status === 'exported') {
-        ElMessage.success(`导出成功: ${data.file_path}`)
-      }
+const handleBatchDelete = () => {
+  const count = selectedRows.value.length
+  ElMessageBox.confirm(
+    `确定要从磁盘上永久删除选中的 ${count} 个文件吗？此操作不可撤销！`,
+    '批量物理删除确认',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'error'
     }
-  } catch (error) {
-    ElMessage.error('导出失败: ' + error)
-    console.error(error)
-  }
+  ).then(async () => {
+    try {
+      for (const row of selectedRows.value) {
+        await API.deleteFile(row.file_path)
+      }
+      ElMessage.success(`成功删除 ${count} 个文件`)
+      selectedRows.value = []
+      await refreshResults()
+    } catch (error) {
+      ElMessage.error('部分文件删除失败: ' + error)
+      await refreshResults()
+    }
+  })
 }
 
 const clearResults = () => {
-  ElMessageBox.confirm('确定要清空所有结果？此操作不可撤销', '警告', {
+  ElMessageBox.confirm('确定要清空扫描结果吗？', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(() => {
-    scanStore.clearResults()
-    ElMessage.success('已清空')
-  }).catch(() => {
-    ElMessage.info('已取消')
+  }).then(async () => {
+    try {
+      await invoke('clear_results')
+      scanStore.clearResults()
+      ElMessage.success('已清空显示并清理数据库')
+    } catch (error) {
+      ElMessage.error('清理失败: ' + error)
+    }
   })
+}
+
+const formatFilePath = (path: string) => {
+  const lastSlash = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'));
+  return lastSlash >= 0 ? path.substring(0, lastSlash + 1) : path;
+}
+
+const exportToExcel = async () => {
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    const path = await save({
+      title: '导出扫描结果',
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+      defaultPath: '涉敏文件汇总.xlsx'
+    })
+    
+    if (path) {
+      await API.exportResults('xlsx', path)
+      ElMessage.success('导出成功')
+    }
+  } catch (error) {
+    ElMessage.error('导出失败: ' + error)
+  }
 }
 </script>
 
 <style scoped lang="css">
 .results-page {
-  background-color: #fff;
+  width: 100%;
+}
+
+.results-card {
+  border-radius: 12px;
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 100%;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: #303133;
 }
 
-.actions {
+.count-tag {
+  font-weight: normal;
+}
+
+.header-actions {
   display: flex;
-  gap: 10px;
-  align-items: center;
+  gap: 12px;
+}
+
+.type-tag {
+  margin-right: 4px;
+  margin-bottom: 4px;
+  border-radius: 4px;
 }
 
 .pagination-container {
+  margin-top: 20px;
   display: flex;
   justify-content: flex-end;
-  margin-top: 20px;
 }
 
-.detail-content {
-  padding: 20px 0;
+.empty-state {
+  padding: 60px 0;
+}
+
+:deep(.el-table) {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+:deep(.el-table__row) {
+  height: 60px;
+}
+
+:deep(.el-pagination) {
+  font-weight: normal;
 }
 </style>

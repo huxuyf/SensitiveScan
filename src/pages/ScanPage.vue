@@ -1,70 +1,51 @@
 <template>
   <div class="scan-page">
-    <!-- Scan Enabled Card -->
-    <el-card class="scan-enabled-card" shadow="hover">
-      <div class="card-content">
-        <div class="card-left">
-          <div class="card-header">
-            <h3 class="card-title">扫描功能</h3>
-            <p class="card-description">
-              选择要扫描的文件夹，系统将自动识别文件中的敏感信息，包括手机号、身份证、姓名、地址等
-            </p>
-          </div>
+    <!-- 扫描配置板块 -->
+    <el-card class="config-card" shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span class="title">扫描路径配置</span>
+          <p class="subtitle">选择要扫描的文件夹，系统将自动识别其中的敏感信息</p>
         </div>
-        <div class="card-right">
-          <el-switch
-            v-model="scanEnabled"
-            size="large"
-            active-color="#4a90e2"
-            inactive-color="#dcdfe6"
-          />
-        </div>
-      </div>
-    </el-card>
-
-    <!-- Scan Configuration -->
-    <div class="section-title">扫描配置</div>
-    <el-card class="config-card" shadow="hover">
-      <div class="config-grid">
-        <!-- Scan Paths -->
-        <div class="config-item">
-          <div class="config-header">
-            <h4 class="config-title">扫描路径</h4>
-            <p class="config-desc">选择要扫描的文件夹路径</p>
-          </div>
-          <div class="path-input-group">
-            <el-input
-              v-model="newPath"
-              placeholder="输入扫描路径"
-              @keyup.enter="addPath"
-              clearable
-            />
-            <el-button type="primary" @click="addPath">添加</el-button>
+      </template>
+      
+      <div class="path-input-group">
+        <el-input
+          v-model="newPath"
+          placeholder="手动输入路径或点击右侧选择"
+          @keyup.enter="addPath"
+          clearable
+        >
+          <template #append>
             <el-button @click="selectFolder">
               <el-icon><FolderOpened /></el-icon>
               选择文件夹
             </el-button>
-          </div>
-          <div class="path-list" v-if="scanForm.scan_paths.length > 0">
-            <el-tag
-              v-for="(path, index) in scanForm.scan_paths"
-              :key="index"
-              closable
-              @close="removePath(index)"
-              class="path-tag"
-              type="info"
-            >
-              {{ path }}
-            </el-tag>
-          </div>
-        </div>
+          </template>
+        </el-input>
+        <el-button type="primary" @click="addPath" :disabled="!newPath">添加</el-button>
+      </div>
 
-        <!-- Exclude Paths -->
-        <div class="config-item">
-          <div class="config-header">
-            <h4 class="config-title">排除路径</h4>
-            <p class="config-desc">设置要排除扫描的文件夹</p>
-          </div>
+      <div class="path-list" v-if="scanForm.scan_paths.length > 0">
+        <el-tag
+          v-for="(path, index) in scanForm.scan_paths"
+          :key="index"
+          closable
+          @close="removePath(index)"
+          class="path-tag"
+          type="primary"
+          effect="light"
+        >
+          {{ path }}
+        </el-tag>
+      </div>
+
+      <div class="exclude-section">
+        <el-button link @click="showExclude = !showExclude">
+          {{ showExclude ? '隐藏排除路径' : '设置排除路径' }}
+        </el-button>
+        
+        <div v-if="showExclude" class="exclude-content">
           <div class="path-input-group">
             <el-input
               v-model="newExcludePath"
@@ -72,11 +53,8 @@
               @keyup.enter="addExcludePath"
               clearable
             />
-            <el-button @click="addExcludePath">添加</el-button>
-            <el-button @click="selectExcludeFolder">
-              <el-icon><FolderOpened /></el-icon>
-              选择文件夹
-            </el-button>
+            <el-button @click="addExcludePath" :disabled="!newExcludePath">添加</el-button>
+            <el-button @click="selectExcludeFolder">选择文件夹</el-button>
           </div>
           <div class="path-list" v-if="scanForm.exclude_paths.length > 0">
             <el-tag
@@ -85,7 +63,7 @@
               closable
               @close="removeExcludePath(index)"
               class="path-tag"
-              type="warning"
+              type="info"
             >
               {{ path }}
             </el-tag>
@@ -94,258 +72,110 @@
       </div>
     </el-card>
 
-    <!-- Visual Settings -->
-    <div class="section-title">视觉设置</div>
-    <el-card class="visual-card" shadow="hover">
-      <div class="visual-grid">
-        <div class="setting-item">
-          <div class="setting-content">
-            <h4 class="setting-title">显示进度</h4>
-            <p class="setting-desc">在扫描过程中实时显示进度信息</p>
-          </div>
-          <el-switch
-            v-model="visualSettings.showProgress"
-            size="large"
-            active-color="#4a90e2"
-            inactive-color="#dcdfe6"
-          />
-        </div>
-
-        <div class="setting-item">
-          <div class="setting-content">
-            <h4 class="setting-title">显示结果</h4>
-            <p class="setting-desc">扫描完成后自动显示结果列表</p>
-          </div>
-          <el-switch
-            v-model="visualSettings.showResults"
-            size="large"
-            active-color="#4a90e2"
-            inactive-color="#dcdfe6"
-          />
-        </div>
-
-        <div class="setting-item">
-          <div class="setting-content">
-            <h4 class="setting-title">自动保存</h4>
-            <p class="setting-desc">扫描结果自动保存到历史记录</p>
-          </div>
-          <el-switch
-            v-model="visualSettings.autoSave"
-            size="large"
-            active-color="#4a90e2"
-            inactive-color="#dcdfe6"
-          />
-        </div>
-
-        <div class="setting-item">
-          <div class="setting-content">
-            <h4 class="setting-title">声音提示</h4>
-            <p class="setting-desc">扫描完成时播放提示音</p>
-          </div>
-          <el-switch
-            v-model="visualSettings.soundNotification"
-            size="large"
-            active-color="#4a90e2"
-            inactive-color="#dcdfe6"
-          />
-        </div>
-      </div>
-    </el-card>
-
-    <!-- Sensitive Types -->
-    <div class="section-title">敏感信息类型</div>
-    <el-card class="types-card" shadow="hover">
-      <div class="types-grid">
-        <div
-          v-for="type in sensitiveTypes"
-          :key="type.value"
-          class="type-item"
-          :class="{ 'type-selected': scanForm.sensitive_types.includes(type.value) }"
-          @click="toggleType(type.value)"
-        >
-          <div class="type-icon" :style="{ color: type.color }">
-            <component :is="type.icon" />
-          </div>
-          <div class="type-info">
-            <h4 class="type-title">{{ type.label }}</h4>
-            <p class="type-desc">{{ type.description }}</p>
-          </div>
-          <div class="type-check">
-            <el-icon v-if="scanForm.sensitive_types.includes(type.value)">
-              <CircleCheck />
-            </el-icon>
-          </div>
-        </div>
-      </div>
-    </el-card>
-
-    <!-- Action Buttons -->
-    <div class="action-buttons">
+    <!-- 中心主操作面板 -->
+    <div class="action-container">
       <el-button
         type="primary"
-        size="large"
+        class="start-btn"
         @click="startScan"
         :disabled="!canStartScan || scanStore.isScanning"
         :loading="scanStore.isScanning"
       >
-        <el-icon><Search /></el-icon>
-        <span>{{ scanStore.isScanning ? '扫描中...' : '开始扫描' }}</span>
+        <el-icon v-if="!scanStore.isScanning"><Search /></el-icon>
+        <span>{{ scanStore.isScanning ? '正在扫描敏感信息...' : '开始扫描' }}</span>
       </el-button>
-      <el-button
-        v-if="scanStore.isScanning"
-        size="large"
-        @click="pauseScan"
-        :disabled="scanStore.isPaused"
-      >
-        <el-icon><VideoPause /></el-icon>
-        <span>暂停</span>
-      </el-button>
-      <el-button
-        v-if="scanStore.isScanning"
-        size="large"
-        @click="resumeScan"
-        :disabled="!scanStore.isPaused"
-      >
-        <el-icon><VideoPlay /></el-icon>
-        <span>继续</span>
-      </el-button>
-      <el-button
-        v-if="scanStore.isScanning"
-        size="large"
-        type="danger"
-        @click="stopScan"
-      >
-        <el-icon><CircleClose /></el-icon>
-        <span>停止</span>
-      </el-button>
+
+      <div v-if="scanStore.isScanning" class="scan-controls">
+        <el-button @click="pauseScan" :icon="VideoPause" circle v-if="!scanStore.isPaused" />
+        <el-button @click="resumeScan" :icon="VideoPlay" circle v-else />
+        <el-button type="danger" @click="stopScan" :icon="CircleClose" circle />
+      </div>
     </div>
 
-    <!-- Progress Panel -->
-    <el-card v-if="scanStore.isScanning" class="progress-card" shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span class="title">扫描进度</span>
-          <el-button type="text" @click="scanStore.isScanning = false">关闭</el-button>
-        </div>
-      </template>
-
-      <div class="progress-content">
-        <div class="progress-stats">
-          <div class="stat-item">
-            <div class="stat-label">当前文件</div>
-            <div class="stat-value">{{ scanStore.currentFile || '准备中...' }}</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">已扫描文件</div>
-            <div class="stat-value">{{ scanStore.filesScanned }}</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">发现结果</div>
-            <div class="stat-value highlight">{{ scanStore.resultsFound }}</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">扫描速度</div>
-            <div class="stat-value">{{ scanStore.scanSpeed }} 文件/秒</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">已用时间</div>
-            <div class="stat-value">{{ formatTime(scanStore.elapsedSeconds) }}</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">预计剩余</div>
-            <div class="stat-value">{{ formatTime(scanStore.estimatedRemaining) }}</div>
+    <!-- 扫描实时进度浮层 -->
+    <transition name="el-fade-in">
+      <el-card v-if="scanStore.isScanning" class="progress-card" shadow="never">
+        <div class="progress-info">
+          <div class="current-file">正在检查: {{ scanStore.currentFile || '准备中...' }}</div>
+          <div class="progress-stats">
+            <!-- 统计信息已移除 -->
           </div>
         </div>
-
-        <div class="progress-bar-container">
-          <el-progress
-            :percentage="Math.round(scanStore.progressPercentage)"
-            :format="(percentage) => `${percentage}%`"
-            :stroke-width="20"
-            striped
-            striped-flow
-          />
-        </div>
-      </div>
-    </el-card>
+        <el-progress
+          :percentage="Math.round(scanStore.progressPercentage)"
+          :stroke-width="12"
+          striped
+          striped-flow
+        />
+      </el-card>
+    </transition>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useScanStore } from '../stores/scanStore'
 import { ElMessage } from 'element-plus'
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import {
   FolderOpened,
   Search,
   VideoPause,
   VideoPlay,
-  CircleClose,
-  CircleCheck,
-  Phone,
-  Grid,
-  User,
-  Location
+  CircleClose
 } from '@element-plus/icons-vue'
 
 const scanStore = useScanStore()
+const router = useRouter()
+const showExclude = ref(false)
 
-const scanEnabled = ref(true)
 const scanForm = ref({
-  scan_paths: [],
-  exclude_paths: [],
+  scan_paths: [] as string[],
+  exclude_paths: [] as string[],
   max_file_size: 100 * 1024 * 1024,
   sensitive_types: ['phonenumber', 'idcard', 'name', 'address']
-})
-
-const visualSettings = ref({
-  showProgress: true,
-  showResults: true,
-  autoSave: true,
-  soundNotification: false
 })
 
 const newPath = ref('')
 const newExcludePath = ref('')
 
-const sensitiveTypes = [
-  {
-    value: 'phonenumber',
-    label: '手机号码',
-    description: '识别11位手机号码',
-    icon: Phone,
-    color: '#4a90e2'
-  },
-  {
-    value: 'idcard',
-    label: '身份证号',
-    description: '识别18位身份证号码',
-    icon: Grid,
-    color: '#f56c6c'
-  },
-  {
-    value: 'name',
-    label: '姓名',
-    description: '识别中文姓名',
-    icon: User,
-    color: '#67c23a'
-  },
-  {
-    value: 'address',
-    label: '地址',
-    description: '识别中文地址',
-    icon: Location,
-    color: '#e6a23c'
-  }
-]
+const canStartScan = computed(() => scanForm.value.scan_paths.length > 0)
 
-const canStartScan = computed(() => scanForm.value.scan_paths.length > 0 && scanEnabled.value)
+const addScanPath = (newP: string) => {
+  const normalize = (p: string) => p.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
+  const newNorm = normalize(newP);
+  
+  // 校验当前要添加的新目录是否已经被包含在一个更大的已存盘符或路径之下
+  const isChild = scanForm.value.scan_paths.some(p => {
+    const pNorm = normalize(p);
+    return newNorm === pNorm || newNorm.startsWith(pNorm + '/');
+  });
+
+  if (isChild) {
+    ElMessage.warning(`您添加的路径已包含在现有路径中，无需重复添加`);
+    return;
+  }
+
+  // 反向检查要添加的新目录是否是现存某些子路径的父级，以便用更大的路径取代细碎的子路径
+  const children = scanForm.value.scan_paths.filter(p => {
+    const pNorm = normalize(p);
+    return pNorm.startsWith(newNorm + '/');
+  });
+
+  if (children.length > 0) {
+    scanForm.value.scan_paths = scanForm.value.scan_paths.filter(p => !children.includes(p));
+    scanForm.value.scan_paths.push(newP);
+    ElMessage.warning(`您添加的路径包含了已存在的子路径，已自动合并`);
+  } else {
+    scanForm.value.scan_paths.push(newP);
+  }
+}
 
 const addPath = () => {
   if (newPath.value.trim()) {
-    scanForm.value.scan_paths.push(newPath.value.trim())
+    addScanPath(newPath.value.trim())
     newPath.value = ''
   }
 }
@@ -356,7 +186,9 @@ const removePath = (index: number) => {
 
 const addExcludePath = () => {
   if (newExcludePath.value.trim()) {
-    scanForm.value.exclude_paths.push(newExcludePath.value.trim())
+    if (!scanForm.value.exclude_paths.includes(newExcludePath.value.trim())) {
+      scanForm.value.exclude_paths.push(newExcludePath.value.trim())
+    }
     newExcludePath.value = ''
   }
 }
@@ -369,12 +201,10 @@ const selectFolder = async () => {
   try {
     const selected = await invoke<string>('select_folder')
     if (selected) {
-      scanForm.value.scan_paths.push(selected)
-      ElMessage.success('已添加扫描路径')
+      addScanPath(selected)
     }
   } catch (error) {
-    console.error('Failed to select folder:', error)
-    ElMessage.error('选择文件夹失败')
+    console.error('调用原生文件夹选择框失败:', error)
   }
 }
 
@@ -383,32 +213,16 @@ const selectExcludeFolder = async () => {
     const selected = await invoke<string>('select_folder')
     if (selected) {
       scanForm.value.exclude_paths.push(selected)
-      ElMessage.success('已添加排除路径')
     }
   } catch (error) {
-    console.error('Failed to select exclude folder:', error)
-    ElMessage.error('选择排除文件夹失败')
-  }
-}
-
-const toggleType = (type: string) => {
-  const index = scanForm.value.sensitive_types.indexOf(type)
-  if (index > -1) {
-    scanForm.value.sensitive_types.splice(index, 1)
-  } else {
-    scanForm.value.sensitive_types.push(type)
+    console.error('排除路径对话框调起失败:', error)
   }
 }
 
 const startScan = async () => {
-  if (!canStartScan.value) {
-    ElMessage.warning('请至少选择一个扫描路径')
-    return
-  }
-
+  if (!canStartScan.value) return
+  
   try {
-    scanForm.value.max_file_size = scanStore.settings.max_file_size || (100 * 1024 * 1024)
-
     scanStore.startScan(scanForm.value)
     const result = await invoke<string>('start_scan', {
       scanPaths: scanForm.value.scan_paths,
@@ -416,64 +230,25 @@ const startScan = async () => {
       maxFileSize: scanForm.value.max_file_size,
       sensitiveTypes: scanForm.value.sensitive_types
     })
-
     const data = JSON.parse(result)
     if (data.status === 'started') {
-      ElMessage.success('扫描已启动')
+      ElMessage.success('扫描任务已启动')
     } else {
       ElMessage.error('启动扫描失败')
       scanStore.stopScan()
     }
   } catch (error) {
-    console.error('Start scan error:', error)
-    ElMessage.error('启动扫描失败: ' + (error as Error).message)
+    ElMessage.error('启动扫描失败: ' + error)
     scanStore.stopScan()
   }
 }
 
-const pauseScan = async () => {
-  try {
-    await invoke<string>('pause_scan')
-    scanStore.pauseScan()
-    ElMessage.info('扫描已暂停')
-  } catch (error) {
-    ElMessage.error('暂停扫描失败')
-    console.error(error)
-  }
-}
+const pauseScan = () => invoke('pause_scan').then(() => scanStore.pauseScan())
+const resumeScan = () => invoke('resume_scan').then(() => scanStore.resumeScan())
+const stopScan = () => invoke('stop_scan').then(() => scanStore.stopScan())
 
-const resumeScan = async () => {
-  try {
-    await invoke<string>('resume_scan')
-    scanStore.resumeScan()
-    ElMessage.info('扫描已继续')
-  } catch (error) {
-    ElMessage.error('继续扫描失败')
-    console.error(error)
-  }
-}
-
-const stopScan = async () => {
-  try {
-    await invoke<string>('stop_scan')
-    scanStore.stopScan()
-    ElMessage.warning('扫描已停止')
-  } catch (error) {
-    ElMessage.error('停止扫描失败')
-    console.error(error)
-  }
-}
-
-const formatTime = (seconds: number) => {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = seconds % 60
-  return `${hours}h ${minutes}m ${secs}s`
-}
-
-// Event listeners
+// 维护与后端的长连接事件通道
 let unlistenProgress: (() => void) | null = null
-let unlistenResult: (() => void) | null = null
 let unlistenComplete: (() => void) | null = null
 
 onMounted(async () => {
@@ -481,261 +256,90 @@ onMounted(async () => {
     unlistenProgress = await listen<any>('scan-progress', (event) => {
       scanStore.updateProgress(event.payload)
     })
-
-    unlistenResult = await listen<any>('scan-result', (event) => {
-      scanStore.addResult(event.payload)
-    })
-
-    unlistenComplete = await listen<any>('scan-complete', (event) => {
+    unlistenComplete = await listen<any>('scan-complete', () => {
       scanStore.stopScan()
       ElMessage.success('扫描已完成')
+      router.push('/results')
     })
   } catch (error) {
-    console.error('Failed to setup event listeners:', error)
+    console.error('底座事件监听器安装失败:', error)
   }
 })
 
 onUnmounted(() => {
   unlistenProgress?.()
-  unlistenResult?.()
   unlistenComplete?.()
 })
 </script>
 
 <style scoped lang="css">
 .scan-page {
-  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  max-width: 800px;
   margin: 0 auto;
 }
 
-/* Section Title */
-.section-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-  margin: 24px 0 16px 0;
-}
-
-/* Scan Enabled Card */
-.scan-enabled-card {
-  margin-bottom: 24px;
-}
-
-.card-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-left {
-  flex: 1;
-}
-
-.card-header {
-  margin-bottom: 0;
-}
-
-.card-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-  margin: 0 0 8px 0;
-}
-
-.card-description {
-  color: #666;
-  font-size: 14px;
-  line-height: 1.5;
-  margin: 0;
-}
-
-.card-right {
-  margin-left: 24px;
-}
-
-/* Config Card */
 .config-card {
-  margin-bottom: 24px;
+  border-radius: 12px;
+  border: 1px solid #ebeef5;
 }
 
-.config-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-}
-
-.config-item {
-  padding: 16px;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-}
-
-.config-header {
-  margin-bottom: 16px;
-}
-
-.config-title {
-  font-size: 14px;
+.card-header .title {
+  font-size: 18px;
   font-weight: 600;
-  color: #333;
-  margin: 0 0 4px 0;
+  color: #303133;
 }
 
-.config-desc {
-  color: #666;
+.card-header .subtitle {
+  margin: 8px 0 0 0;
   font-size: 13px;
-  margin: 0;
+  color: #909399;
 }
 
 .path-input-group {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.path-input-group :deep(.el-input) {
-  flex: 1;
+  gap: 12px;
+  margin-bottom: 20px;
 }
 
 .path-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 16px;
 }
 
-.path-tag {
-  max-width: 300px;
+.exclude-section {
+  border-top: 1px dashed #ebeef5;
+  padding-top: 16px;
 }
 
-/* Visual Card */
-.visual-card {
-  margin-bottom: 24px;
+.exclude-content {
+  margin-top: 12px;
 }
 
-.visual-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-
-.setting-item {
+.action-container {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  padding: 16px;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-}
-
-.setting-content {
-  flex: 1;
-}
-
-.setting-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-  margin: 0 0 4px 0;
-}
-
-.setting-desc {
-  color: #666;
-  font-size: 13px;
-  margin: 0;
-}
-
-/* Types Card */
-.types-card {
-  margin-bottom: 24px;
-}
-
-.types-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
+  margin-top: 20px;
 }
 
-.type-item {
-  display: flex;
-  align-items: center;
-  padding: 16px;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s;
-  border: 2px solid transparent;
-}
-
-.type-item:hover {
-  background-color: #e3f2fd;
-  transform: translateY(-2px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.type-selected {
-  background-color: #e3f2fd;
-  border-color: #4a90e2;
-}
-
-.type-icon {
-  font-size: 32px;
-  margin-right: 16px;
-}
-
-.type-info {
-  flex: 1;
-}
-
-.type-title {
-  font-size: 14px;
+.start-btn {
+  height: 60px;
+  width: 240px;
+  font-size: 18px;
   font-weight: 600;
-  color: #333;
-  margin: 0 0 4px 0;
+  border-radius: 30px;
+  box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
 }
 
-.type-desc {
-  color: #666;
-  font-size: 13px;
-  margin: 0;
-}
-
-.type-check {
-  font-size: 24px;
-  color: #4a90e2;
-}
-
-/* Action Buttons */
-.action-buttons {
+.scan-controls {
   display: flex;
   gap: 12px;
-  margin-bottom: 24px;
-  justify-content: center;
-}
-
-.action-buttons :deep(.el-button) {
-  min-width: 120px;
-}
-
-/* Progress Card */
-.progress-card {
-  margin-bottom: 24px;
-}
-
-.progress-card .card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.progress-content {
-  padding: 16px 0;
-}
-
-.progress-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
 }
 
 .stat-item {
@@ -766,7 +370,7 @@ onUnmounted(() => {
   margin-top: 16px;
 }
 
-/* Responsive */
+/* 移动端与多尺寸容器的响应式规则调整 */
 @media (max-width: 768px) {
   .config-grid,
   .visual-grid,

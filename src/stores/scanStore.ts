@@ -1,16 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-interface ScanResult {
-  id: string
+interface AggregatedResult {
   file_path: string
-  sheet_name?: string
-  row: number
-  column: number
-  sensitive_type: string
-  content: string
-  masked_content: string
-  found_at: string
+  file_name: string
+  file_size: number
+  file_type: string
+  sensitive_types: string
+  count: number
 }
 
 interface ScanConfig {
@@ -28,7 +25,7 @@ interface Settings {
 }
 
 export const useScanStore = defineStore('scan', () => {
-  // State
+  // 核心状态数据
   const isScanning = ref(false)
   const isPaused = ref(false)
   const currentFile = ref('')
@@ -38,7 +35,7 @@ export const useScanStore = defineStore('scan', () => {
   const elapsedSeconds = ref(0)
   const estimatedRemaining = ref(0)
   const scanSpeed = ref(0)
-  const results = ref<ScanResult[]>([])
+  const aggregatedResults = ref<AggregatedResult[]>([])
   const scanConfig = ref<ScanConfig>({
     scan_paths: [],
     exclude_paths: [],
@@ -46,13 +43,13 @@ export const useScanStore = defineStore('scan', () => {
     sensitive_types: ['phonenumber', 'idcard', 'name', 'address']
   })
   const settings = ref<Settings>({
-    max_file_size: 100 * 1024 * 1024, // 100MB default
+    max_file_size: 100 * 1024 * 1024,
     auto_mask_results: true,
     export_format: 'xlsx',
     language: 'zh-CN'
   })
 
-  // Computed
+  // 依赖派生的计算属性
   const scanStats = computed(() => ({
     filesScanned: filesScanned.value,
     resultsFound: resultsFound.value,
@@ -61,7 +58,6 @@ export const useScanStore = defineStore('scan', () => {
     scanSpeed: scanSpeed.value.toFixed(2)
   }))
 
-  // Actions
   const startScan = (config: ScanConfig) => {
     scanConfig.value = config
     isScanning.value = true
@@ -70,31 +66,17 @@ export const useScanStore = defineStore('scan', () => {
     resultsFound.value = 0
     progressPercentage.value = 0
     elapsedSeconds.value = 0
-    results.value = []
+    aggregatedResults.value = []
   }
 
-  const pauseScan = () => {
-    isPaused.value = true
-  }
-
-  const resumeScan = () => {
-    isPaused.value = false
-  }
-
+  const pauseScan = () => { isPaused.value = true }
+  const resumeScan = () => { isPaused.value = false }
   const stopScan = () => {
     isScanning.value = false
     isPaused.value = false
   }
 
-  const updateProgress = (data: {
-    current_file: string
-    files_scanned: number
-    results_found: number
-    progress_percentage: number
-    elapsed_seconds: number
-    estimated_remaining: number
-    scan_speed: number
-  }) => {
+  const updateProgress = (data: any) => {
     currentFile.value = data.current_file
     filesScanned.value = data.files_scanned
     resultsFound.value = data.results_found
@@ -104,40 +86,34 @@ export const useScanStore = defineStore('scan', () => {
     scanSpeed.value = data.scan_speed
   }
 
-  const addResult = (result: ScanResult) => {
-    results.value.push(result)
-  }
-
   const clearResults = () => {
-    results.value = []
+    aggregatedResults.value = []
   }
 
+  const setAggregatedResults = (data: AggregatedResult[]) => {
+    aggregatedResults.value = data
+  }
+
+  // 利用 LocalStorage 将偏好设置本地持久化
   const updateSettings = (newSettings: Partial<Settings>) => {
-    settings.value = {
-      ...settings.value,
-      ...newSettings
-    }
-    // Persist to localStorage
+    settings.value = { ...settings.value, ...newSettings }
     localStorage.setItem('scan-settings', JSON.stringify(settings.value))
   }
 
-  // Load settings from localStorage on init
   const loadSettings = () => {
     const saved = localStorage.getItem('scan-settings')
     if (saved) {
       try {
         settings.value = { ...settings.value, ...JSON.parse(saved) }
       } catch (e) {
-        console.error('Failed to load settings:', e)
+        console.error('加载本地设置数据失败:', e)
       }
     }
   }
 
-  // Initialize
   loadSettings()
 
   return {
-    // State
     isScanning,
     isPaused,
     currentFile,
@@ -147,19 +123,17 @@ export const useScanStore = defineStore('scan', () => {
     elapsedSeconds,
     estimatedRemaining,
     scanSpeed,
-    results,
+    aggregatedResults,
     scanConfig,
     settings,
-    // Computed
     scanStats,
-    // Actions
     startScan,
     pauseScan,
     resumeScan,
     stopScan,
     updateProgress,
-    addResult,
     clearResults,
+    setAggregatedResults,
     updateSettings,
     loadSettings
   }

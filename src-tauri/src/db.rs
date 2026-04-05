@@ -9,7 +9,7 @@ pub struct Database {
 }
 
 impl Database {
-    /// Initialize database connection
+    /// 初始化数据库连接
     pub fn new() -> SqlResult<Self> {
         let db_path = Self::get_db_path();
         std::fs::create_dir_all(db_path.parent().unwrap()).ok();
@@ -22,7 +22,7 @@ impl Database {
         Ok(db)
     }
     
-    /// Get database file path based on platform
+    /// 根据系统平台获取本地存储的数据库文件路径
     fn get_db_path() -> PathBuf {
         let config_dir = if cfg!(target_os = "windows") {
             dirs::config_dir()
@@ -41,7 +41,7 @@ impl Database {
         config_dir.join("results.db")
     }
     
-    /// Initialize database schema
+    /// 初始化构建数据库的表结构
     fn init_schema(&self) -> SqlResult<()> {
         self.conn.lock().unwrap().execute_batch(
             "
@@ -54,6 +54,16 @@ impl Database {
                 sensitive_type TEXT NOT NULL,
                 content TEXT NOT NULL,
                 masked_content TEXT NOT NULL,
+                found_at DATETIME NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS sensitive_files (
+                file_path TEXT PRIMARY KEY,
+                file_name TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                file_type TEXT NOT NULL,
+                sensitive_types TEXT NOT NULL,
+                count INTEGER NOT NULL,
                 found_at DATETIME NOT NULL
             );
 
@@ -77,13 +87,14 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_scan_results_file ON scan_results(file_path);
             CREATE INDEX IF NOT EXISTS idx_scan_results_type ON scan_results(sensitive_type);
             CREATE INDEX IF NOT EXISTS idx_scan_results_found_at ON scan_results(found_at);
+            CREATE INDEX IF NOT EXISTS idx_sensitive_files_path ON sensitive_files(file_path);
             CREATE INDEX IF NOT EXISTS idx_scan_history_created_at ON scan_history(created_at);
             "
         )?;
         Ok(())
     }
 
-    /// Insert scan result
+    /// 插入一条底层具体的命中扫描结果
     pub fn insert_scan_result(&self, result: &ScanResult) -> SqlResult<()> {
         self.conn.lock().unwrap().execute(
             "INSERT INTO scan_results
@@ -103,8 +114,27 @@ impl Database {
         )?;
         Ok(())
     }
+
+    /// 插入聚合整理后的涉敏文件结果
+    pub fn insert_sensitive_file(&self, result: &crate::models::AggregatedResult) -> SqlResult<()> {
+        self.conn.lock().unwrap().execute(
+            "INSERT OR REPLACE INTO sensitive_files
+             (file_path, file_name, file_size, file_type, sensitive_types, count, found_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                result.file_path,
+                result.file_name,
+                result.file_size,
+                result.file_type,
+                result.sensitive_types,
+                result.count,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
     
-    /// Get scan results with optional filtering
+    /// 按条件筛选获取扫描记录
     pub fn get_scan_results(
         &self,
         limit: Option<i64>,
@@ -152,21 +182,75 @@ impl Database {
         Ok(vec)
     }
 
-    /// Count scan results
+    /// 统计全局命中的文件结果总数
     pub fn count_scan_results(&self) -> SqlResult<u64> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT COUNT(*) FROM scan_results")?;
+        let mut stmt = conn.prepare("SELECT COUNT(*) FROM sensitive_files")?;
         stmt.query_row([], |row| row.get(0))
     }
 
-    /// Delete scan results
-    #[allow(dead_code)]
+    /// 一键彻底清空数据库中留存的历史扫描结果
     pub fn delete_scan_results(&self) -> SqlResult<()> {
         self.conn.lock().unwrap().execute("DELETE FROM scan_results", [])?;
+        self.conn.lock().unwrap().execute("DELETE FROM sensitive_files", [])?;
         Ok(())
     }
 
-    /// Insert scan history
+    /// 调取按特定匹配次数底限聚合合并后的全部涉敏文件列表
+    pub fn get_aggregated_results(&self, threshold: u32) -> SqlResult<Vec<crate::models::AggregatedResult>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT 
+                file_path, 
+                file_name, 
+                file_size,
+                file_type,
+                sensitive_types,
+                count
+             FROM sensitive_files 
+             WHERE count >= ?
+             ORDER BY found_at DESC"
+        )?;
+
+        let results = stmt.query_map(params![threshold], |row| {
+            let file_path: String = row.get(0)?;
+            let file_name: String = row.get(1)?;
+            let file_size: u64 = row.get(2)?;
+            let file_type: String = row.get(3)?;
+            let sensitive_types: String = row.get(4)?;
+            let count: u32 = row.get(5)?;
+
+            Ok(crate::models::AggregatedResult {
+                file_path,
+                file_name,
+                file_size,
+                file_type,
+                sensitive_types,
+                count,
+            })
+        })?;
+
+        let mut vec = Vec::new();
+        for result in results {
+            vec.push(result?);
+        }
+        Ok(vec)
+    }
+
+    /// 从数据库表中抹除指定的那个已删除文件
+    pub fn delete_results_by_file(&self, file_path: &str) -> SqlResult<()> {
+        self.conn.lock().unwrap().execute(
+            "DELETE FROM scan_results WHERE file_path = ?",
+            params![file_path],
+        )?;
+        self.conn.lock().unwrap().execute(
+            "DELETE FROM sensitive_files WHERE file_path = ?",
+            params![file_path],
+        )?;
+        Ok(())
+    }
+
+    /// 添加扫描的执行历史事件记录
     #[allow(dead_code)]
     pub fn insert_scan_history(&self, history: &crate::models::ScanHistory) -> SqlResult<()> {
         let config_json = serde_json::to_string(&history.config)
@@ -191,7 +275,7 @@ impl Database {
         Ok(())
     }
 
-    /// Get scan history
+    /// 调阅过往扫描的历史表记录
     pub fn get_scan_history(&self, limit: Option<i64>) -> SqlResult<Vec<crate::models::ScanHistory>> {
         let limit = limit.unwrap_or(100);
         let conn = self.conn.lock().unwrap();
@@ -234,7 +318,7 @@ impl Database {
         Ok(vec)
     }
 
-    /// Delete scan history
+    /// 删除属于单次的执行记录项
     pub fn delete_scan_history(&self, history_id: &str) -> SqlResult<()> {
         self.conn.lock().unwrap().execute(
             "DELETE FROM scan_history WHERE id = ?",
@@ -243,7 +327,7 @@ impl Database {
         Ok(())
     }
 
-    /// Add whitelist entry
+    /// 添加放行词汇到白名单规则中
     pub fn add_whitelist(&self, entry: &WhitelistEntry) -> SqlResult<()> {
         self.conn.lock().unwrap().execute(
             "INSERT INTO whitelist (id, content, sensitive_type, description, created_at)
@@ -259,7 +343,7 @@ impl Database {
         Ok(())
     }
 
-    /// Get whitelist
+    /// 获取全部注册在案的白名单配置词典
     pub fn get_whitelist(&self) -> SqlResult<Vec<WhitelistEntry>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -295,7 +379,7 @@ impl Database {
         Ok(vec)
     }
 
-    /// Delete whitelist entry
+    /// 删除一条已存在的白名单特征
     pub fn delete_whitelist(&self, entry_id: &str) -> SqlResult<()> {
         self.conn.lock().unwrap().execute(
             "DELETE FROM whitelist WHERE id = ?",
@@ -304,12 +388,16 @@ impl Database {
         Ok(())
     }
 
-    /// Clear old data
+    /// 清空过于久远的扫描历史残存数据
     #[allow(dead_code)]
     pub fn cleanup_old_data(&self, days: i64) -> SqlResult<()> {
         let cutoff_date = Utc::now() - chrono::Duration::days(days);
         self.conn.lock().unwrap().execute(
             "DELETE FROM scan_results WHERE found_at < ?",
+            params![cutoff_date.to_rfc3339()],
+        )?;
+        self.conn.lock().unwrap().execute(
+            "DELETE FROM sensitive_files WHERE found_at < ?",
             params![cutoff_date.to_rfc3339()],
         )?;
         Ok(())
