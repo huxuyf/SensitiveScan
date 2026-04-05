@@ -29,6 +29,7 @@
 </template>
 
 <script setup lang="ts">
+/// <reference path="./element-plus-locale.d.ts" />
 import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'

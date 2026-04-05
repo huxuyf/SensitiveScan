@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 /// 敏感信息类型
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -92,27 +92,6 @@ pub struct ScanStats {
     pub scan_duration_secs: u64,
     pub scan_speed: f64, // 每秒扫描文件数
     pub results_by_type: std::collections::HashMap<String, u64>,
-}
-
-/// 历史扫描记录
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScanHistory {
-    pub id: String,
-    pub scan_paths: Vec<String>,
-    pub config: ScanConfig,
-    pub stats: ScanStats,
-    pub created_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
-}
-
-/// 白名单配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WhitelistEntry {
-    pub id: String,
-    pub content: String,
-    pub sensitive_type: SensitiveType,
-    pub description: Option<String>,
-    pub created_at: DateTime<Utc>,
 }
 
 /// 导出格式选项
